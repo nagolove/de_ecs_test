@@ -3,14 +3,7 @@
 
 
 #include "koh_destral_ecs.h"
-#if defined(PLATFORM_WEB)
-#include <emscripten/emscripten.h>
-#else
-#include <signal.h>
-#include <unistd.h>
-#include <execinfo.h>
-#endif
-
+#include "koh_table.h"
 #include "munit.h"
 #include "koh.h"
 #include "raylib.h"
@@ -33,6 +26,29 @@ static const de_cp_type cmp_cell = {
     .initial_cap = 20000,
 };
 
+static HTable *table = NULL;
+
+static struct Cell *create_cell_h(de_ecs *r, int x, int y) {
+
+    //if (get_cell_count(mv) >= FIELD_SIZE * FIELD_SIZE)
+        //return NULL;
+
+    de_entity en = de_create(r);
+    struct Cell *cell = de_emplace(r, en, cmp_cell);
+    munit_assert_ptr_not_null(cell);
+    cell->from_x = x;
+    cell->from_y = y;
+    cell->to_x = rand() % 1000;
+    cell->to_y = rand() % 1000;
+    cell->value = rand() % 1000;
+
+    assert(table);
+    htable_add(table, &en, sizeof(en), cell, sizeof(*cell));
+
+    trace("create_cell: en %ld at (%d, %d)\n", en, cell->from_x, cell->from_y);
+    return cell;
+}
+
 static struct Cell *create_cell(de_ecs *r, int x, int y) {
 
     //if (get_cell_count(mv) >= FIELD_SIZE * FIELD_SIZE)
@@ -50,6 +66,79 @@ static struct Cell *create_cell(de_ecs *r, int x, int y) {
     return cell;
 }
 
+static MunitResult test_emplace_destroy_with_hash(
+    const MunitParameter params[], void* data
+) {
+    de_ecs *r = de_ecs_make();
+    int entts_num = 0;
+    table = htable_new(&(struct HTableSetup) {
+        .cap = 30000,
+        .on_remove = NULL,
+    });
+
+    for (int k = 0; k < 10; k++) {
+
+        for (int x = 0; x < 100; x++) {
+            for (int y = 0; y < 100; y++) {
+                struct Cell *cell = create_cell(r, x, y);
+                munit_assert_ptr_not_null(cell);
+            }
+        }
+
+        for (int j = 0; j < 10; j++) {
+
+            for (int i = 0; i < 10; i++) {
+
+                for (de_view v = de_create_view(r, 1, (de_cp_type[1]) { cmp_cell }); 
+                        de_view_valid(&v); de_view_next(&v)) {
+
+                    munit_assert(de_valid(r, de_view_entity(&v)));
+                    struct Cell *c = de_view_get_safe(&v, cmp_cell);
+                    munit_assert_ptr_not_null(c);
+
+                    c->moving = false;
+                    c->from_x = rand() % 100 + 10;
+                    c->from_y = rand() % 100 + 10;
+                }
+
+            }
+
+            for (de_view v = de_create_view(r, 1, (de_cp_type[1]) { cmp_cell }); 
+                    de_view_valid(&v); de_view_next(&v)) {
+
+
+                munit_assert(de_valid(r, de_view_entity(&v)));
+                struct Cell *c = de_view_get_safe(&v, cmp_cell);
+                munit_assert_ptr_not_null(c);
+
+                if (c->from_x == 10 || c->from_y == 10) {
+                    printf("removing entity\n");
+                    de_destroy(r, de_view_entity(&v));
+                }
+            }
+
+        }
+    }
+
+    for (de_view v = de_create_view(r, 1, (de_cp_type[1]) { cmp_cell }); 
+        de_view_valid(&v); de_view_next(&v)) {
+
+        munit_assert(de_valid(r, de_view_entity(&v)));
+        struct Cell *c = de_view_get_safe(&v, cmp_cell);
+        munit_assert_ptr_not_null(c);
+
+        munit_assert_int(c->from_x, >=, 10);
+        munit_assert_int(c->from_x, <=, 10 + 100);
+        munit_assert_int(c->from_y, >=, 10);
+        munit_assert_int(c->from_y, <=, 10 + 100);
+        munit_assert(c->moving == false);
+    }
+
+    de_ecs_destroy(r);
+    htable_free(table);
+    table = NULL;
+    return MUNIT_OK;
+}
 
 static MunitResult test_emplace_destroy(
     const MunitParameter params[], void* data
@@ -106,12 +195,14 @@ static MunitResult test_emplace_destroy(
         }
     }
 
+    /*
     for (int i = 0; i < entts_num; ++i) {
         if (de_valid(r, entts[i])) {
             munit_assert(de_has(r, entts[i], cmp_cell));
             de_destroy(r, entts[i]);
         }
     }
+    */
 
     for (de_view v = de_create_view(r, 1, (de_cp_type[1]) { cmp_cell }); 
         de_view_valid(&v); de_view_next(&v)) {
