@@ -1,5 +1,5 @@
 return {
    artifact = "ecs-test",
-   main = "main.c",
+   main = "ecs-test.c",
    src = "src",
 }
