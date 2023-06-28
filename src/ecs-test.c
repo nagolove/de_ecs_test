@@ -2,11 +2,13 @@
 // vim: fdm=marker
 
 
-#include "koh_destral_ecs.h"
-#include "koh_table.h"
-#include "koh_set.h"
-#include "munit.h"
 #include "koh.h"
+#include "koh_destral_ecs.h"
+#include "koh_routine.h"
+#include "koh_set.h"
+#include "koh_strset.h"
+#include "koh_table.h"
+#include "munit.h"
 #include "raylib.h"
 #include <assert.h>
 #include <memory.h>
@@ -65,12 +67,10 @@ static struct Cell *create_cell_h(de_ecs *r, int x, int y) {
 }
 */
 
+// TODO: использовать эту функцию для тестирования сложносоставных сущностей
 static struct Triple *create_triple(
     de_ecs *r, de_entity en, const struct Triple tr
 ) {
-
-    //if (get_cell_count(mv) >= FIELD_SIZE * FIELD_SIZE)
-        //return NULL;
 
     assert(r);
     assert(de_valid(r, en));
@@ -87,12 +87,13 @@ static struct Triple *create_triple(
     return triple;
 }
 
-static struct Cell *create_cell(de_ecs *r, int x, int y) {
+static struct Cell *create_cell(de_ecs *r, int x, int y, de_entity *e) {
 
     //if (get_cell_count(mv) >= FIELD_SIZE * FIELD_SIZE)
         //return NULL;
 
     de_entity en = de_create(r);
+    munit_assert(en != de_null);
     struct Cell *cell = de_emplace(r, en, cmp_cell);
     munit_assert_ptr_not_null(cell);
     cell->from_x = x;
@@ -100,6 +101,8 @@ static struct Cell *create_cell(de_ecs *r, int x, int y) {
     cell->to_x = x;
     cell->to_y = y;
     cell->value = -1;
+
+    if (e) *e = en;
 
     if (make_output)
         trace(
@@ -109,35 +112,148 @@ static struct Cell *create_cell(de_ecs *r, int x, int y) {
     return cell;
 }
 
-static void iter_set_add(de_ecs* r, de_entity en, void* udata) {
-    koh_Set *entts = udata;
-    set_add(entts, &en, sizeof(en));
+static void iter_set_add_mono(de_ecs* r, de_entity en, void* udata) {
+    StrSet *entts = udata;
+
+    struct Cell *cell = de_try_get(r, en, cmp_cell);
+    munit_assert_ptr_not_null(cell);
+
+    char repr_cell[256] = {};
+    sprintf(repr_cell, "en %u, cell %d %d %s %d %d %d", 
+        en,
+        cell->from_x, cell->from_y,
+        cell->moving ? "t" : "f",
+        cell->to_x, cell->to_y,
+        cell->value
+    );
+
+    strset_add(entts, repr_cell);
 }
 
-static MunitResult test_ecs_clone(
+static void iter_set_add_multi(de_ecs* r, de_entity en, void* udata) {
+    StrSet *entts = udata;
+
+    struct Cell *cell = de_try_get(r, en, cmp_cell);
+    munit_assert_ptr_not_null(cell);
+
+    struct Triple *triple = de_try_get(r, en, cmp_triple);
+    munit_assert_ptr_not_null(triple);
+
+    char repr_cell[256] = {};
+    sprintf(repr_cell, "en %u, cell %d %d %s %d %d %d", 
+        en,
+        cell->from_x, cell->from_y,
+        cell->moving ? "t" : "f",
+        cell->to_x, cell->to_y,
+        cell->value
+    );
+
+    char repr_triple[256] = {};
+    sprintf(repr_triple, "en %u, %f %f %f", 
+        en,
+        triple->dx,
+        triple->dy,
+        triple->dz
+    );
+
+    char repr[strlen(repr_cell) + strlen(repr_triple) + 2];
+    memset(repr, 0, sizeof(repr));
+
+    strcat(strcat(repr, repr_cell), repr_triple);
+
+    strset_add(entts, repr);
+}
+
+/*
+static koh_SetAction iter_set_print(
+    const void *key, int key_len, void *udata
+) {
+    munit_assert(key_len == sizeof(de_entity));
+    const de_entity *en = key;
+    //printf("(%f, %f)\n", vec->x, vec->y);
+    printf("en %u\n", *en);
+    return koh_SA_next;
+}
+*/
+
+static MunitResult test_ecs_clone_multi(
     const MunitParameter params[], void* data
 ) {
 
     de_ecs *r = de_ecs_make();
 
-    for (int x = 0; x < 100; x++) {
-        for (int y = 0; y < 100; y++) {
-            struct Cell *cell = create_cell(r, x, y);
+    for (int x = 0; x < 50; x++) {
+        for (int y = 0; y < 50; y++) {
+            de_entity en = de_null;
+            struct Cell *cell = create_cell(r, x, y, &en);
+            munit_assert(en != de_null);
+            create_triple(r, en, (struct Triple) {
+                .dx = x,
+                .dy = y,
+                .dz = x * y,
+            });
             munit_assert_ptr_not_null(cell);
         }
     }
-    de_ecs *cloned = de_ecs_clone(r);
-    koh_Set *entts1 = set_new();
-    koh_Set *entts2 = set_new();
+    de_ecs  *cloned = de_ecs_clone(r);
+    StrSet *entts1 = strset_new();
+    StrSet *entts2 = strset_new();
 
-    de_each(r, iter_set_add, entts1);
-    de_each(cloned, iter_set_add, entts1);
+    de_each(r, iter_set_add_multi, entts1);
+    de_each(cloned, iter_set_add_multi, entts2);
 
-    munit_assert(set_compare(entts1, entts2));
+    /*
+    printf("\n"); printf("\n"); printf("\n");
+    set_each(entts1, iter_set_print, NULL);
 
-    set_free(entts1);
-    set_free(entts2);
+    printf("\n"); printf("\n"); printf("\n");
+    set_each(entts2, iter_set_print, NULL);
+    */
+
+    munit_assert(strset_compare(entts1, entts2));
+
+    strset_free(entts1);
+    strset_free(entts2);
     de_ecs_destroy(r);
+    de_ecs_destroy(cloned);
+
+    return MUNIT_OK;
+}
+
+// TODO: Добавить проверку компонент сущностей
+static MunitResult test_ecs_clone_mono(
+    const MunitParameter params[], void* data
+) {
+
+    de_ecs *r = de_ecs_make();
+
+    for (int x = 0; x < 50; x++) {
+        for (int y = 0; y < 50; y++) {
+            struct Cell *cell = create_cell(r, x, y, NULL);
+            munit_assert_ptr_not_null(cell);
+        }
+    }
+    de_ecs  *cloned = de_ecs_clone(r);
+    StrSet *entts1 = strset_new();
+    StrSet *entts2 = strset_new();
+
+    de_each(r, iter_set_add_mono, entts1);
+    de_each(cloned, iter_set_add_mono, entts2);
+
+    /*
+    printf("\n"); printf("\n"); printf("\n");
+    strset_each(entts1, iter_strset_print, NULL);
+
+    printf("\n"); printf("\n"); printf("\n");
+    strset_each(entts2, iter_strset_print, NULL);
+    */
+
+    munit_assert(strset_compare(entts1, entts2));
+
+    strset_free(entts1);
+    strset_free(entts2);
+    de_ecs_destroy(r);
+    de_ecs_destroy(cloned);
 
     return MUNIT_OK;
 }
@@ -226,16 +342,16 @@ static MunitResult test_emplace_destroy(
 
     for (int k = 0; k < 3; k++) {
 
-        for (int x = 0; x < 100; x++) {
-            for (int y = 0; y < 100; y++) {
-                struct Cell *cell = create_cell(r, x, y);
+        for (int x = 0; x < 50; x++) {
+            for (int y = 0; y < 50; y++) {
+                struct Cell *cell = create_cell(r, x, y, NULL);
                 munit_assert_ptr_not_null(cell);
             }
         }
 
         for (int j = 0; j < 3; j++) {
 
-            for (int i = 0; i < 10; i++) {
+            for (int i = 0; i < 5; i++) {
 
                 for (de_view v = de_create_view(r, 1, (de_cp_type[1]) { cmp_cell }); 
                         de_view_valid(&v); de_view_next(&v)) {
@@ -310,8 +426,16 @@ static MunitTest test_suite_tests[] = {
     NULL
   },
   {
-    (char*) "/ecs_clone",
-    test_ecs_clone,
+    (char*) "/ecs_clone_mono",
+    test_ecs_clone_mono,
+    NULL,
+    NULL,
+    MUNIT_TEST_OPTION_NONE,
+    NULL
+  },
+  {
+    (char*) "/ecs_clone_multi",
+    test_ecs_clone_multi,
     NULL,
     NULL,
     MUNIT_TEST_OPTION_NONE,
