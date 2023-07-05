@@ -176,6 +176,31 @@ static koh_SetAction iter_set_print(
 }
 */
 
+static MunitResult test_try_get_none_existing_component(
+    const MunitParameter params[], void* data
+) {
+    de_ecs *r = de_ecs_make();
+
+    de_entity en = de_create(r);
+
+    struct Cell *cell;
+    struct Triple *triple;
+
+    cell = de_emplace(r, en, cmp_cell);
+    cell->moving = true;
+
+    cell = NULL;
+    cell = de_try_get(r, en, cmp_cell);
+    assert(cell);
+
+    triple = NULL;
+    triple = de_try_get(r, en, cmp_triple);
+    assert(!triple);
+
+    de_ecs_destroy(r);
+    return MUNIT_OK;
+}
+
 static MunitResult test_ecs_clone_multi(
     const MunitParameter params[], void* data
 ) {
@@ -417,6 +442,14 @@ static MunitResult test_emplace_destroy(
 }
 
 static MunitTest test_suite_tests[] = {
+  {
+    (char*) "/try_get_none_existing_component",
+    test_try_get_none_existing_component,
+    NULL,
+    NULL,
+    MUNIT_TEST_OPTION_NONE,
+    NULL
+  },
   {
     (char*) "/emplace_destroy",
     test_emplace_destroy,
