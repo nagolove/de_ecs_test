@@ -181,21 +181,29 @@ static MunitResult test_try_get_none_existing_component(
 ) {
     de_ecs *r = de_ecs_make();
 
-    de_entity en = de_create(r);
+    for (int i = 0; i < 5000; ++i) {
+        de_entity en = de_create(r);
 
-    struct Cell *cell;
-    struct Triple *triple;
+        struct Cell *cell;
+        struct Triple *triple;
 
-    cell = de_emplace(r, en, cmp_cell);
-    cell->moving = true;
+        cell = de_emplace(r, en, cmp_cell);
+        cell->moving = true;
 
-    cell = NULL;
-    cell = de_try_get(r, en, cmp_cell);
-    assert(cell);
+        cell = NULL;
+        cell = de_try_get(r, en, cmp_cell);
+        assert(cell);
 
-    triple = NULL;
-    triple = de_try_get(r, en, cmp_triple);
-    assert(!triple);
+        ///////////// !!!!!
+        triple = NULL;
+        triple = de_try_get(r, en, cmp_triple);
+        assert(!triple);
+        ///////////// !!!!!
+
+        cell = NULL;
+        cell = de_try_get(r, en, cmp_cell);
+        assert(cell);
+    }
 
     de_ecs_destroy(r);
     return MUNIT_OK;
