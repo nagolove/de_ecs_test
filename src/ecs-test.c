@@ -1,8 +1,8 @@
 // vim: set colorcolumn=85
 // vim: fdm=marker
 
-
 #include "koh.h"
+#include "koh_common.h"
 #include "koh_destral_ecs.h"
 #include "koh_routine.h"
 #include "koh_set.h"
@@ -12,9 +12,12 @@
 #include "raylib.h"
 #include <assert.h>
 #include <memory.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+static bool verbose_print = false;
 
 struct Cell {
     int             value;
@@ -112,7 +115,7 @@ static struct Cell *create_cell(de_ecs *r, int x, int y, de_entity *e) {
     return cell;
 }
 
-static void iter_set_add_mono(de_ecs* r, de_entity en, void* udata) {
+static bool iter_set_add_mono(de_ecs* r, de_entity en, void* udata) {
     StrSet *entts = udata;
 
     struct Cell *cell = de_try_get(r, en, cmp_cell);
@@ -128,9 +131,10 @@ static void iter_set_add_mono(de_ecs* r, de_entity en, void* udata) {
     );
 
     strset_add(entts, repr_cell);
+    return false;
 }
 
-static void iter_set_add_multi(de_ecs* r, de_entity en, void* udata) {
+static bool iter_set_add_multi(de_ecs* r, de_entity en, void* udata) {
     StrSet *entts = udata;
 
     struct Cell *cell = de_try_get(r, en, cmp_cell);
@@ -162,6 +166,7 @@ static void iter_set_add_multi(de_ecs* r, de_entity en, void* udata) {
     strcat(strcat(repr, repr_cell), repr_triple);
 
     strset_add(entts, repr);
+    return false;
 }
 
 /*
@@ -366,6 +371,294 @@ static MunitResult test_emplace_destroy_with_hash(
 }
 */
 
+struct EntityState {
+    de_entity   e;
+    bool        components_set[3];
+    int         components_values[3];
+    bool        found;
+};
+
+struct TestDestroyCtx {
+    de_cp_type          components[3];
+    int                 comp_num;
+    de_ecs              *r;
+    struct koh_Set      *set;
+    int                 entt_num, last_comp_value;
+    int                 index_target, index_current;
+    struct EntityState  estate_target;
+};
+
+//__attribute__((unused))
+static char *estate2str(const struct EntityState *estate) {
+
+    if (!estate) {
+        koh_trap();
+    }
+
+    static char buf[128] = {};
+    int comp_num = 
+        sizeof(estate->components_values) / 
+        sizeof(estate->components_values[0]);
+
+    char *pbuf = buf;
+    pbuf += sprintf(pbuf, "e %u, ", estate->e);
+    for (int i = 0; i < comp_num; i++) {
+        if (estate && estate->components_set[i]) {
+            pbuf += sprintf(pbuf, "[%u %u]", i, estate->components_values[i]);
+        }
+    }
+
+    pbuf += sprintf(pbuf, ", found %s", estate->found ? "true" : "false");
+
+    return buf;
+}
+
+static koh_SetAction iter_set_search_and_remove(
+    const void *key, int key_len, void *udata
+) {
+    assert(udata);
+    assert(key);
+
+    const struct EntityState *key_state = key;
+    struct TestDestroyCtx *ctx = udata;
+
+    if (verbose_print) {
+        printf("iter_set_search: index_current %d\n", ctx->index_current);
+        printf("iter_set_search: index_target %d\n", ctx->index_target);
+    }
+
+    if (ctx->index_current == ctx->index_target) {
+        if (verbose_print) 
+            printf(
+                "iter_set_search: %s found and removed\n",
+                estate2str(key_state)
+            );
+        ctx->estate_target = *key_state;
+        ctx->estate_target.found = true;
+        return koh_SA_remove_break;
+    }
+
+    ctx->index_current++;
+
+    return koh_SA_next;
+}
+
+// Удаляет одну случайную сущность из системы.
+static struct TestDestroyCtx destroy_entt(struct TestDestroyCtx ctx) {
+    if (verbose_print)
+        printf("destroy_entt:\n");
+
+    if (ctx.entt_num == 0) {
+        printf("destroy_entt: ctx.ennt_num == 0\n");
+        koh_trap();
+    }
+
+    if (verbose_print)
+        printf("ctx.ennt_num %d\n", ctx.entt_num);
+
+    memset(&ctx.estate_target, 0, sizeof(ctx.estate_target));
+    ctx.estate_target.e = de_null;
+
+    // подготовка к поиску
+    ctx.index_current = 0;
+    ctx.index_target = random() % (ctx.entt_num - 1) + 1;
+
+    if (verbose_print)
+        printf("index_target %d\n", ctx.index_target);
+
+    // итератор поиска и удаления одной записи из множества
+    set_each(ctx.set, iter_set_search_and_remove, &ctx);
+
+    munit_assert_uint32(ctx.estate_target.e, !=, de_null);
+    munit_assert(ctx.estate_target.found);
+
+    if (verbose_print)
+        printf("destroy_entt: e %u\n", ctx.estate_target.e);
+
+    de_destroy(ctx.r, ctx.estate_target.e);
+
+    /*
+    ctx.estate_target.found = false;
+    bool is_removed = set_remove(
+        ctx.set, &ctx.estate_target, sizeof(ctx.estate_target)
+    );
+    */
+
+    //munit_assert(is_removed);
+    ctx.entt_num--;
+    return ctx;
+}
+
+void create_one(struct TestDestroyCtx *ctx) {
+    if (!ctx) {
+        fprintf(stderr, "ctx == NULL in create_one\n");
+        abort();
+    }
+
+    assert(ctx->r);
+
+    struct EntityState estate = {
+        .e = de_create(ctx->r),
+    };
+    munit_assert_uint32(estate.e, !=, de_null);
+
+    char fingerprint[128] = {};
+    char *pfingerprint = fingerprint;
+
+    const int estate_comp_num = 
+        sizeof(estate.components_values) / 
+        sizeof(estate.components_values[0]);
+    assert(estate_comp_num <= ctx->comp_num);
+
+    for (int comp_index = 0; comp_index < ctx->comp_num; comp_index++) {
+        if ((double)rand() / (double)RAND_MAX < 0.5) 
+            continue;
+
+        de_cp_type comp = ctx->components[comp_index];
+        int *c = de_emplace(ctx->r, estate.e, comp);
+        munit_assert_not_null(c);
+        *c = ctx->last_comp_value++;
+
+        estate.components_set[comp_index] = true;
+        estate.components_values[comp_index] = *c;
+
+        pfingerprint += sprintf(
+            pfingerprint, "[%zu  %d]", comp.cp_id, *c
+        );
+    }
+
+    if (verbose_print)
+        printf("e %u, fingerprint %s\n", estate.e, fingerprint);
+
+    set_add(ctx->set, &estate, sizeof(estate));
+    ctx->entt_num++;
+}
+
+static koh_SetAction set_print_each(
+    const void *key, int key_len, void *udata
+) {
+    assert(key);
+    printf("%s\n", estate2str(key));
+    return koh_SA_next;
+}
+
+static void estate_set_print(koh_Set *set) {
+    set_each(set, set_print_each, NULL);
+    printf("\n");
+}
+
+static bool iter_ecs_each(de_ecs *r, de_entity e, void *udata) {
+    struct TestDestroyCtx *ctx = udata;
+
+    assert(r);
+    assert(udata);
+    assert(e != de_null);
+    assert(ctx->set);
+
+    struct EntityState estate = { 
+        .e = e, 
+        .found = false,
+    };
+    for (int i = 0; i < ctx->comp_num; i++) {
+        if (de_has(r, e, ctx->components[i])) {
+            estate.components_set[i] = true;
+            int *comp_value = de_try_get(r, e, ctx->components[i]);
+            munit_assert_ptr_not_null(comp_value);
+            estate.components_values[i] = *comp_value;
+        }
+    }
+
+    printf("iter_ecs_each: estate %s\n", estate2str(&estate));
+    bool exists = set_exist(ctx->set, &estate, sizeof(estate));
+    if (!exists) {
+        printf("iter_ecs_each: not found\n");
+        estate_set_print(ctx->set);
+        munit_assert(exists);
+    }
+
+    return false;
+}
+
+// TODO: Не находится один компонент из всех во множестве
+struct TestDestroyCtx ecs_check_each(struct TestDestroyCtx ctx) {
+    assert(ctx.r);
+    de_each(ctx.r, iter_ecs_each, &ctx);
+    return ctx;
+}
+
+/*
+    Задача - протестировать уничтожение сущностей вместе со всеми связанными
+    компонентами.
+    --
+    Создается определенное количество сущностей, к каждой крепится от одного
+    до 3х компонент.
+    --
+    Случайным образом удаляются несколько сущностей.
+    Случайным образом добавляются несколько сущностей.
+    --
+    Проверка, что состояние ecs контейнера соответствует ожидаемому.
+    Проверка происходит через de_view c одним компонентом
+ */
+static MunitResult test_destroy(
+    const MunitParameter params[], void* data
+) {
+    printf("de_null %u\n", de_null);
+    /*struct StrSet *set = strset_new();*/
+    /*struct koh_Set *set_ecs = set_new();*/
+
+    // {{{ components
+    const static de_cp_type comp1 = {
+        .cp_id = 0,
+        .cp_sizeof = sizeof(int),
+        .initial_cap = 10000,
+        .name = "comp1",
+    };
+
+    const static de_cp_type comp2 = {
+        .cp_id = 1,
+        .cp_sizeof = sizeof(int),
+        .initial_cap = 10000,
+        .name = "comp2",
+    };
+
+    const static de_cp_type comp3 = {
+        .cp_id = 2,
+        .cp_sizeof = sizeof(int),
+        .initial_cap = 10000,
+        .name = "comp3",
+    };
+    // }}}
+
+    struct TestDestroyCtx ctx = {
+        .r = de_ecs_make(),
+        .set = set_new(),
+        .entt_num = 0,
+        .comp_num = 3,
+    };
+    ctx.components[0] = comp1;
+    ctx.components[1] = comp2;
+    ctx.components[2] = comp3;
+
+    printf("\n");
+
+    int entities_num = 10;
+    int cycles = 10;
+
+    for (int i = 0; i < cycles; ++i) {
+        for (int j = 0; j < entities_num; j++)
+            create_one(&ctx);
+
+        for (int j = 0; j < entities_num / 2; j++)
+            ctx = destroy_entt(ctx);
+
+        ctx = ecs_check_each(ctx);
+    }
+
+    set_free(ctx.set);
+    de_ecs_destroy(ctx.r);
+    return MUNIT_OK;
+}
+
 static MunitResult test_emplace_destroy(
     const MunitParameter params[], void* data
 ) {
@@ -453,6 +746,14 @@ static MunitTest test_suite_tests[] = {
   {
     (char*) "/try_get_none_existing_component",
     test_try_get_none_existing_component,
+    NULL,
+    NULL,
+    MUNIT_TEST_OPTION_NONE,
+    NULL
+  },
+  {
+    (char*) "/destroy",
+    test_destroy,
     NULL,
     NULL,
     MUNIT_TEST_OPTION_NONE,
