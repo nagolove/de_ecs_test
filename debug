@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+gdb --args ./ecs-test --no-fork de_ecs/destroy

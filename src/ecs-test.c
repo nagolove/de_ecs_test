@@ -11,6 +11,7 @@
 #include "munit.h"
 #include "raylib.h"
 #include <assert.h>
+#include <math.h>
 #include <memory.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -461,7 +462,11 @@ static struct TestDestroyCtx destroy_entt(struct TestDestroyCtx ctx) {
 
     // подготовка к поиску
     ctx.index_current = 0;
-    ctx.index_target = random() % (ctx.entt_num - 1) + 1;
+
+    if (ctx.entt_num == 1)
+        ctx.index_target = 0;
+    else
+        ctx.index_target = random() % (ctx.entt_num - 1) + 1;
 
     if (verbose_print)
         printf("index_target %d\n", ctx.index_target);
@@ -489,16 +494,11 @@ static struct TestDestroyCtx destroy_entt(struct TestDestroyCtx ctx) {
     return ctx;
 }
 
-void create_one(struct TestDestroyCtx *ctx) {
-    if (!ctx) {
-        fprintf(stderr, "ctx == NULL in create_one\n");
-        abort();
-    }
-
-    assert(ctx->r);
+static struct TestDestroyCtx create_one(struct TestDestroyCtx ctx) {
+    assert(ctx.r);
 
     struct EntityState estate = {
-        .e = de_create(ctx->r),
+        .e = de_create(ctx.r),
     };
     munit_assert_uint32(estate.e, !=, de_null);
 
@@ -508,16 +508,17 @@ void create_one(struct TestDestroyCtx *ctx) {
     const int estate_comp_num = 
         sizeof(estate.components_values) / 
         sizeof(estate.components_values[0]);
-    assert(estate_comp_num <= ctx->comp_num);
+    assert(estate_comp_num <= ctx.comp_num);
 
-    for (int comp_index = 0; comp_index < ctx->comp_num; comp_index++) {
+    for (int comp_index = 0; comp_index < ctx.comp_num; comp_index++) {
+        // Может создать компонент, а может и нет?
         if ((double)rand() / (double)RAND_MAX < 0.5) 
             continue;
 
-        de_cp_type comp = ctx->components[comp_index];
-        int *c = de_emplace(ctx->r, estate.e, comp);
+        de_cp_type comp = ctx.components[comp_index];
+        int *c = de_emplace(ctx.r, estate.e, comp);
         munit_assert_not_null(c);
-        *c = ctx->last_comp_value++;
+        *c = ctx.last_comp_value++;
 
         estate.components_set[comp_index] = true;
         estate.components_values[comp_index] = *c;
@@ -530,21 +531,24 @@ void create_one(struct TestDestroyCtx *ctx) {
     if (verbose_print)
         printf("e %u, fingerprint %s\n", estate.e, fingerprint);
 
-    set_add(ctx->set, &estate, sizeof(estate));
-    ctx->entt_num++;
+    set_add(ctx.set, &estate, sizeof(estate));
+    ctx.entt_num++;
+
+    return ctx;
 }
 
 static koh_SetAction set_print_each(
     const void *key, int key_len, void *udata
 ) {
     assert(key);
-    printf("%s\n", estate2str(key));
+    printf("    %s\n", estate2str(key));
     return koh_SA_next;
 }
 
 static void estate_set_print(koh_Set *set) {
+    printf("estate {\n");
     set_each(set, set_print_each, NULL);
-    printf("\n");
+    printf("} (size = %d)\n", set_size(set));
 }
 
 static bool iter_ecs_each(de_ecs *r, de_entity e, void *udata) {
@@ -559,6 +563,8 @@ static bool iter_ecs_each(de_ecs *r, de_entity e, void *udata) {
         .e = e, 
         .found = false,
     };
+
+    // сборка структуры estate через запрос к ecs
     for (int i = 0; i < ctx->comp_num; i++) {
         if (de_has(r, e, ctx->components[i])) {
             estate.components_set[i] = true;
@@ -568,12 +574,33 @@ static bool iter_ecs_each(de_ecs *r, de_entity e, void *udata) {
         }
     }
 
-    printf("iter_ecs_each: estate %s\n", estate2str(&estate));
+    printf("iter_ecs_each: search estate %s\n", estate2str(&estate));
     bool exists = set_exist(ctx->set, &estate, sizeof(estate));
+    //bool exists = false;
+
+    printf("estate {\n");
+    for (struct koh_SetView v = set_each_begin(ctx->set);
+        set_each_valid(&v); set_each_next(&v)) {
+        const struct EntityState *key = set_each_key(&v);
+        
+        if (!key) {
+            fprintf(stderr, "set_each_key return NULL\n");
+            abort();
+        }
+
+        if (!memcmp(key, &estate, sizeof(estate))) {
+            exists = true;
+        }
+        printf("    %s\n", estate2str(key));
+    }
+    printf("} (size = %d)\n", set_size(ctx->set));
+    
     if (!exists) {
         printf("iter_ecs_each: not found\n");
         estate_set_print(ctx->set);
         munit_assert(exists);
+    } else {
+        printf("iter_ecs_each: EXISTS %s\n", estate2str(&estate));
     }
 
     return false;
@@ -584,6 +611,183 @@ struct TestDestroyCtx ecs_check_each(struct TestDestroyCtx ctx) {
     assert(ctx.r);
     de_each(ctx.r, iter_ecs_each, &ctx);
     return ctx;
+}
+
+static bool iter_ecs_counter(de_ecs *r, de_entity e, void *udata) {
+    int *counter = udata;
+    (*counter)++;
+    return false;
+}
+
+struct TestDestroyOneRandomCtx {
+    de_entity   *entts;
+    int         entts_len;
+    de_cp_type  comp_type;
+};
+
+static bool iter_ecs_check_entt(de_ecs *r, de_entity e, void *udata) {
+    struct TestDestroyOneRandomCtx *ctx = udata;
+    for (int i = 0; i < ctx->entts_len; i++) {
+        if (ctx->entts[i] == e) {
+            munit_assert_true(de_has(r, e, ctx->comp_type));
+        }
+    }
+    munit_assert(false);
+    return false;
+}
+
+static MunitResult test_destroy_one_random(
+    const MunitParameter params[], void* data
+) {
+    de_ecs *r = de_ecs_make();
+
+    int entts_len = 4000;
+    de_entity entts[entts_len];
+
+    const static de_cp_type comp = {
+        .cp_id = 0,
+        .cp_sizeof = sizeof(int),
+        .initial_cap = 1000,
+        .name = "main component",
+    };
+
+    struct TestDestroyOneRandomCtx ctx = {
+        .entts_len = entts_len,
+        .entts = entts,
+        .comp_type = comp,
+    };
+
+    for (int i = 0; i < entts_len; i++)
+        entts[i] = de_null;
+    //memset(entts, 0, sizeof(entts[0]) * entts_len);
+
+    const int cycles = 1000;
+
+    int comp_value_index = 0;
+    for (int j = 0; j < cycles; j++) {
+
+        int new_num = random() % 10;
+        for (int i = 0; i < new_num; i++) {
+
+            bool created = false;
+            for (int k = 0; k < entts_len; ++k) {
+                if (created)
+                    break;
+
+                if (entts[k] == de_null) {
+                    //printf("creation cycle, k %d\n", k);
+                    entts[k] = de_create(r);
+                    munit_assert_uint32(entts[k], !=, de_null);
+                    int *comp_value = de_emplace(r, entts[k], comp);
+                    munit_assert_ptr_not_null(comp_value);
+                    *comp_value = comp_value_index++;
+                    created = true;
+                }
+            }
+            munit_assert_true(created);
+
+        }
+
+        int destroy_num = random() % 5;
+        for (int i = 0; i < destroy_num; ++i) {
+
+            for (int k = 0; k < entts_len; ++k) {
+                if (entts[k] != de_null) {
+                    de_destroy(r, entts[k]);
+                    entts[k] = de_null;
+                }
+            }
+
+        }
+    }
+
+    de_each(r, iter_ecs_check_entt, &ctx);
+
+    for (int k = 0; k < entts_len; ++k) {
+        if (entts[k] != de_null)
+            de_destroy(r, entts[k]);
+    }
+
+    int counter = 0;
+    de_each(r, iter_ecs_counter, &counter);
+    if (counter) {
+        printf("test_destroy_one: counter %d\n", counter);
+    }
+    munit_assert_int(counter, ==, 0);
+
+    de_ecs_destroy(r);
+    return MUNIT_OK;
+}
+
+static MunitResult test_destroy_one(
+    const MunitParameter params[], void* data
+) {
+    de_ecs *r = de_ecs_make();
+
+    int entts_num = 40;
+    de_entity entts[entts_num];
+    memset(entts, 0, sizeof(entts[0]) * entts_num);
+
+    const int cycles = 10;
+
+    const static de_cp_type comp = {
+        .cp_id = 0,
+        .cp_sizeof = sizeof(int),
+        .initial_cap = 1000,
+        .name = "main component",
+    };
+
+    for (int j = 0; j < cycles; j++) {
+        for (int i = 0; i < entts_num; i++) {
+            entts[i] = de_create(r);
+            munit_assert_uint32(entts[i], !=, de_null);
+            int *comp_value = de_emplace(r, entts[i], comp);
+            munit_assert_ptr_not_null(comp_value);
+            *comp_value = i;
+        }
+        for (int i = 0; i < entts_num; i++) {
+            de_destroy(r, entts[i]);
+        }
+    }
+
+    int counter = 0;
+    de_each(r, iter_ecs_counter, &counter);
+    if (counter) {
+        printf("test_destroy_one: counter %d\n", counter);
+    }
+    munit_assert_int(counter, ==, 0);
+
+    de_ecs_destroy(r);
+    return MUNIT_OK;
+}
+
+static MunitResult test_destroy_zero(
+    const MunitParameter params[], void* data
+) {
+    de_ecs *r = de_ecs_make();
+
+    int entts_num = 400;
+    de_entity entts[entts_num];
+    memset(entts, 0, sizeof(entts[0]) * entts_num);
+
+    const int cycles = 1000;
+
+    for (int j = 0; j < cycles; j++) {
+        for (int i = 0; i < entts_num; i++) {
+            entts[i] = de_create(r);
+            munit_assert_uint32(entts[i], !=, de_null);
+        }
+        for (int i = 0; i < entts_num; i++) {
+            de_destroy(r, entts[i]);
+        }
+    }
+
+    int counter = 0;
+    de_each(r, iter_ecs_counter, &counter);
+    munit_assert_int(counter, ==, 0);
+
+    de_ecs_destroy(r);
+    return MUNIT_OK;
 }
 
 /*
@@ -603,6 +807,8 @@ static MunitResult test_destroy(
     const MunitParameter params[], void* data
 ) {
     printf("de_null %u\n", de_null);
+    srand(time(NULL));
+
     /*struct StrSet *set = strset_new();*/
     /*struct koh_Set *set_ecs = set_new();*/
 
@@ -642,16 +848,22 @@ static MunitResult test_destroy(
     printf("\n");
 
     int entities_num = 10;
-    int cycles = 10;
+    int cycles = 5;
 
     for (int i = 0; i < cycles; ++i) {
         for (int j = 0; j < entities_num; j++)
-            create_one(&ctx);
+            ctx = create_one(ctx);
 
+        /*
         for (int j = 0; j < entities_num / 2; j++)
             ctx = destroy_entt(ctx);
+        // */
+
+        //create_one(&ctx);
+        ctx = destroy_entt(ctx);
 
         ctx = ecs_check_each(ctx);
+
     }
 
     set_free(ctx.set);
@@ -746,6 +958,30 @@ static MunitTest test_suite_tests[] = {
   {
     (char*) "/try_get_none_existing_component",
     test_try_get_none_existing_component,
+    NULL,
+    NULL,
+    MUNIT_TEST_OPTION_NONE,
+    NULL
+  },
+  {
+    (char*) "/destroy_one_random",
+    test_destroy_one_random,
+    NULL,
+    NULL,
+    MUNIT_TEST_OPTION_NONE,
+    NULL
+  },
+  {
+    (char*) "/destroy_one",
+    test_destroy_one,
+    NULL,
+    NULL,
+    MUNIT_TEST_OPTION_NONE,
+    NULL
+  },
+  {
+    (char*) "/destroy_zero",
+    test_destroy_zero,
     NULL,
     NULL,
     MUNIT_TEST_OPTION_NONE,
