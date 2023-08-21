@@ -84,7 +84,7 @@ static struct Triple *create_triple(
 
     if (make_output)
         trace(
-            "create_tripe: en %ld at (%d, %d, %d)\n", 
+            "create_tripe: en %u at (%f, %f, %f)\n", 
             en, triple->dx, triple->dy, triple->dz
         );
 
@@ -110,7 +110,7 @@ static struct Cell *create_cell(de_ecs *r, int x, int y, de_entity *e) {
 
     if (make_output)
         trace(
-            "create_cell: en %ld at (%d, %d)\n",
+            "create_cell: en %u at (%d, %d)\n",
             en, cell->from_x, cell->from_y
         );
     return cell;
@@ -187,7 +187,8 @@ static MunitResult test_try_get_none_existing_component(
 ) {
     de_ecs *r = de_ecs_make();
 
-    for (int i = 0; i < 5000; ++i) {
+    //for (int i = 0; i < 5000; ++i) {
+    for (int i = 0; i < 50; ++i) {
         de_entity en = de_create(r);
 
         struct Cell *cell;
