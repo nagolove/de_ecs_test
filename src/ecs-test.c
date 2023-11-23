@@ -18,8 +18,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-static bool verbose_print = false;
-
 struct Cell {
     int             value;
     int             from_x, from_y, to_x, to_y;
@@ -30,7 +28,8 @@ struct Triple {
     float dx, dy, dz;
 };
 
-static bool make_output = false;
+// В чем различие переменных?
+static bool verbose_print = false;
 
 static const de_cp_type cmp_triple = {
     .cp_id = 0,
@@ -82,7 +81,7 @@ static struct Triple *create_triple(
     munit_assert_ptr_not_null(triple);
     *triple = tr;
 
-    if (make_output)
+    if (verbose_print)
         trace(
             "create_tripe: en %u at (%f, %f, %f)\n", 
             en, triple->dx, triple->dy, triple->dz
@@ -108,7 +107,7 @@ static struct Cell *create_cell(de_ecs *r, int x, int y, de_entity *e) {
 
     if (e) *e = en;
 
-    if (make_output)
+    if (verbose_print)
         trace(
             "create_cell: en %u at (%d, %d)\n",
             en, cell->from_x, cell->from_y
@@ -123,13 +122,14 @@ static bool iter_set_add_mono(de_ecs* r, de_entity en, void* udata) {
     munit_assert_ptr_not_null(cell);
 
     char repr_cell[256] = {};
-    sprintf(repr_cell, "en %u, cell %d %d %s %d %d %d", 
-        en,
-        cell->from_x, cell->from_y,
-        cell->moving ? "t" : "f",
-        cell->to_x, cell->to_y,
-        cell->value
-    );
+    if (verbose_print)
+        sprintf(repr_cell, "en %u, cell %d %d %s %d %d %d", 
+            en,
+            cell->from_x, cell->from_y,
+            cell->moving ? "t" : "f",
+            cell->to_x, cell->to_y,
+            cell->value
+        );
 
     strset_add(entts, repr_cell);
     return false;
@@ -145,21 +145,23 @@ static bool iter_set_add_multi(de_ecs* r, de_entity en, void* udata) {
     munit_assert_ptr_not_null(triple);
 
     char repr_cell[256] = {};
-    sprintf(repr_cell, "en %u, cell %d %d %s %d %d %d", 
-        en,
-        cell->from_x, cell->from_y,
-        cell->moving ? "t" : "f",
-        cell->to_x, cell->to_y,
-        cell->value
-    );
+    if (verbose_print)
+        sprintf(repr_cell, "en %u, cell %d %d %s %d %d %d", 
+            en,
+            cell->from_x, cell->from_y,
+            cell->moving ? "t" : "f",
+            cell->to_x, cell->to_y,
+            cell->value
+        );
 
     char repr_triple[256] = {};
-    sprintf(repr_triple, "en %u, %f %f %f", 
-        en,
-        triple->dx,
-        triple->dy,
-        triple->dz
-    );
+    if (verbose_print)
+        sprintf(repr_triple, "en %u, %f %f %f", 
+            en,
+            triple->dx,
+            triple->dy,
+            triple->dz
+        );
 
     char repr[strlen(repr_cell) + strlen(repr_triple) + 2];
     memset(repr, 0, sizeof(repr));
@@ -547,9 +549,11 @@ static koh_SetAction set_print_each(
 }
 
 static void estate_set_print(koh_Set *set) {
-    printf("estate {\n");
-    set_each(set, set_print_each, NULL);
-    printf("} (size = %d)\n", set_size(set));
+    if (verbose_print) {
+        printf("estate {\n");
+        set_each(set, set_print_each, NULL);
+        printf("} (size = %d)\n", set_size(set));
+    }
 }
 
 static bool iter_ecs_each(de_ecs *r, de_entity e, void *udata) {
@@ -575,11 +579,13 @@ static bool iter_ecs_each(de_ecs *r, de_entity e, void *udata) {
         }
     }
 
-    printf("iter_ecs_each: search estate %s\n", estate2str(&estate));
+    if (verbose_print)
+        printf("iter_ecs_each: search estate %s\n", estate2str(&estate));
     bool exists = set_exist(ctx->set, &estate, sizeof(estate));
     //bool exists = false;
 
-    printf("estate {\n");
+    if (verbose_print)
+        printf("estate {\n");
     for (struct koh_SetView v = set_each_begin(ctx->set);
         set_each_valid(&v); set_each_next(&v)) {
         const struct EntityState *key = set_each_key(&v);
@@ -592,16 +598,20 @@ static bool iter_ecs_each(de_ecs *r, de_entity e, void *udata) {
         if (!memcmp(key, &estate, sizeof(estate))) {
             exists = true;
         }
-        printf("    %s\n", estate2str(key));
+        if (verbose_print)
+            printf("    %s\n", estate2str(key));
     }
-    printf("} (size = %d)\n", set_size(ctx->set));
+    if (verbose_print)
+        printf("} (size = %d)\n", set_size(ctx->set));
     
     if (!exists) {
-        printf("iter_ecs_each: not found\n");
+        if (verbose_print)
+            printf("iter_ecs_each: not found\n");
         estate_set_print(ctx->set);
         munit_assert(exists);
     } else {
-        printf("iter_ecs_each: EXISTS %s\n", estate2str(&estate));
+        if (verbose_print)
+            printf("iter_ecs_each: EXISTS %s\n", estate2str(&estate));
     }
 
     return false;
@@ -915,7 +925,7 @@ static MunitResult test_emplace_destroy(
                 munit_assert_ptr_not_null(c);
 
                 if (c->from_x == 10 || c->from_y == 10) {
-                    if (make_output) 
+                    if (verbose_print) 
                         printf("removing entity\n");
                     de_destroy(r, de_view_entity(&v));
                 } else {
