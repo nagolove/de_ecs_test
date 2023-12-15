@@ -1,6 +1,7 @@
 // vim: set colorcolumn=85
 // vim: fdm=marker
 
+// {{{ include
 #include "koh.h"
 #include "koh_common.h"
 #include "koh_destral_ecs.h"
@@ -14,9 +15,11 @@
 #include <math.h>
 #include <memory.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+// }}}
 
 struct Cell {
     int             value;
@@ -28,17 +31,16 @@ struct Triple {
     float dx, dy, dz;
 };
 
-// В чем различие переменных?
 static bool verbose_print = false;
 
-static const de_cp_type cmp_triple = {
+static const de_cp_type cp_triple = {
     .cp_id = 0,
     .cp_sizeof = sizeof(struct Triple),
     .name = "triple",
     .initial_cap = 2000,
 };
 
-static const de_cp_type cmp_cell = {
+static const de_cp_type cp_cell = {
     .cp_id = 1,
     .cp_sizeof = sizeof(struct Cell),
     .name = "cell",
@@ -54,7 +56,7 @@ static struct Cell *create_cell_h(de_ecs *r, int x, int y) {
         //return NULL;
 
     de_entity en = de_create(r);
-    struct Cell *cell = de_emplace(r, en, cmp_cell);
+    struct Cell *cell = de_emplace(r, en, cp_cell);
     munit_assert_ptr_not_null(cell);
     cell->from_x = x;
     cell->from_y = y;
@@ -77,7 +79,7 @@ static struct Triple *create_triple(
 
     assert(r);
     assert(de_valid(r, en));
-    struct Triple *triple = de_emplace(r, en, cmp_triple);
+    struct Triple *triple = de_emplace(r, en, cp_triple);
     munit_assert_ptr_not_null(triple);
     *triple = tr;
 
@@ -97,7 +99,7 @@ static struct Cell *create_cell(de_ecs *r, int x, int y, de_entity *e) {
 
     de_entity en = de_create(r);
     munit_assert(en != de_null);
-    struct Cell *cell = de_emplace(r, en, cmp_cell);
+    struct Cell *cell = de_emplace(r, en, cp_cell);
     munit_assert_ptr_not_null(cell);
     cell->from_x = x;
     cell->from_y = y;
@@ -118,7 +120,7 @@ static struct Cell *create_cell(de_ecs *r, int x, int y, de_entity *e) {
 static bool iter_set_add_mono(de_ecs* r, de_entity en, void* udata) {
     StrSet *entts = udata;
 
-    struct Cell *cell = de_try_get(r, en, cmp_cell);
+    struct Cell *cell = de_try_get(r, en, cp_cell);
     munit_assert_ptr_not_null(cell);
 
     char repr_cell[256] = {};
@@ -138,10 +140,10 @@ static bool iter_set_add_mono(de_ecs* r, de_entity en, void* udata) {
 static bool iter_set_add_multi(de_ecs* r, de_entity en, void* udata) {
     StrSet *entts = udata;
 
-    struct Cell *cell = de_try_get(r, en, cmp_cell);
+    struct Cell *cell = de_try_get(r, en, cp_cell);
     munit_assert_ptr_not_null(cell);
 
-    struct Triple *triple = de_try_get(r, en, cmp_triple);
+    struct Triple *triple = de_try_get(r, en, cp_triple);
     munit_assert_ptr_not_null(triple);
 
     char repr_cell[256] = {};
@@ -196,21 +198,21 @@ static MunitResult test_try_get_none_existing_component(
         struct Cell *cell;
         struct Triple *triple;
 
-        cell = de_emplace(r, en, cmp_cell);
+        cell = de_emplace(r, en, cp_cell);
         cell->moving = true;
 
         cell = NULL;
-        cell = de_try_get(r, en, cmp_cell);
+        cell = de_try_get(r, en, cp_cell);
         assert(cell);
 
         ///////////// !!!!!
         triple = NULL;
-        triple = de_try_get(r, en, cmp_triple);
+        triple = de_try_get(r, en, cp_triple);
         assert(!triple);
         ///////////// !!!!!
 
         cell = NULL;
-        cell = de_try_get(r, en, cmp_cell);
+        cell = de_try_get(r, en, cp_cell);
         assert(cell);
     }
 
@@ -323,11 +325,11 @@ static MunitResult test_emplace_destroy_with_hash(
 
             for (int i = 0; i < 10; i++) {
 
-                for (de_view v = de_create_view(r, 1, (de_cp_type[1]) { cmp_cell }); 
+                for (de_view v = de_create_view(r, 1, (de_cp_type[1]) { cp_cell }); 
                         de_view_valid(&v); de_view_next(&v)) {
 
                     munit_assert(de_valid(r, de_view_entity(&v)));
-                    struct Cell *c = de_view_get_safe(&v, cmp_cell);
+                    struct Cell *c = de_view_get_safe(&v, cp_cell);
                     munit_assert_ptr_not_null(c);
 
                     c->moving = false;
@@ -337,12 +339,12 @@ static MunitResult test_emplace_destroy_with_hash(
 
             }
 
-            for (de_view v = de_create_view(r, 1, (de_cp_type[1]) { cmp_cell }); 
+            for (de_view v = de_create_view(r, 1, (de_cp_type[1]) { cp_cell }); 
                     de_view_valid(&v); de_view_next(&v)) {
 
 
                 munit_assert(de_valid(r, de_view_entity(&v)));
-                struct Cell *c = de_view_get_safe(&v, cmp_cell);
+                struct Cell *c = de_view_get_safe(&v, cp_cell);
                 munit_assert_ptr_not_null(c);
 
                 if (c->from_x == 10 || c->from_y == 10) {
@@ -354,11 +356,11 @@ static MunitResult test_emplace_destroy_with_hash(
         }
     }
 
-    for (de_view v = de_create_view(r, 1, (de_cp_type[1]) { cmp_cell }); 
+    for (de_view v = de_create_view(r, 1, (de_cp_type[1]) { cp_cell }); 
         de_view_valid(&v); de_view_next(&v)) {
 
         munit_assert(de_valid(r, de_view_entity(&v)));
-        struct Cell *c = de_view_get_safe(&v, cmp_cell);
+        struct Cell *c = de_view_get_safe(&v, cp_cell);
         munit_assert_ptr_not_null(c);
 
         munit_assert_int(c->from_x, >=, 10);
@@ -814,7 +816,7 @@ static MunitResult test_destroy_zero(
     Проверка, что состояние ecs контейнера соответствует ожидаемому.
     Проверка происходит через de_view c одним компонентом
  */
-static MunitResult test_destroy(
+__attribute__ ((unused)) static MunitResult test_destroy(
     const MunitParameter params[], void* data
 ) {
     printf("de_null %u\n", de_null);
@@ -848,7 +850,7 @@ static MunitResult test_destroy(
 
     struct TestDestroyCtx ctx = {
         .r = de_ecs_make(),
-        .set = set_new(),
+        .set = set_new(NULL),
         .entt_num = 0,
         .comp_num = 3,
     };
@@ -902,11 +904,11 @@ static MunitResult test_emplace_destroy(
 
             for (int i = 0; i < 5; i++) {
 
-                for (de_view v = de_create_view(r, 1, (de_cp_type[1]) { cmp_cell }); 
+                for (de_view v = de_create_view(r, 1, (de_cp_type[1]) { cp_cell }); 
                         de_view_valid(&v); de_view_next(&v)) {
 
                     munit_assert(de_valid(r, de_view_entity(&v)));
-                    struct Cell *c = de_view_get_safe(&v, cmp_cell);
+                    struct Cell *c = de_view_get_safe(&v, cp_cell);
                     munit_assert_ptr_not_null(c);
 
                     c->moving = false;
@@ -916,12 +918,12 @@ static MunitResult test_emplace_destroy(
 
             }
 
-            for (de_view v = de_create_view(r, 1, (de_cp_type[1]) { cmp_cell }); 
+            for (de_view v = de_create_view(r, 1, (de_cp_type[1]) { cp_cell }); 
                     de_view_valid(&v); de_view_next(&v)) {
 
 
                 munit_assert(de_valid(r, de_view_entity(&v)));
-                struct Cell *c = de_view_get_safe(&v, cmp_cell);
+                struct Cell *c = de_view_get_safe(&v, cp_cell);
                 munit_assert_ptr_not_null(c);
 
                 if (c->from_x == 10 || c->from_y == 10) {
@@ -941,17 +943,17 @@ static MunitResult test_emplace_destroy(
     /*
     for (int i = 0; i < entts_num; ++i) {
         if (de_valid(r, entts[i])) {
-            munit_assert(de_has(r, entts[i], cmp_cell));
+            munit_assert(de_has(r, entts[i], cp_cell));
             de_destroy(r, entts[i]);
         }
     }
     */
 
-    for (de_view v = de_create_view(r, 1, (de_cp_type[1]) { cmp_cell }); 
+    for (de_view v = de_create_view(r, 1, (de_cp_type[1]) { cp_cell }); 
         de_view_valid(&v); de_view_next(&v)) {
 
         munit_assert(de_valid(r, de_view_entity(&v)));
-        struct Cell *c = de_view_get_safe(&v, cmp_cell);
+        struct Cell *c = de_view_get_safe(&v, cp_cell);
         munit_assert_ptr_not_null(c);
 
         munit_assert_int(c->from_x, >=, 10);
@@ -965,7 +967,278 @@ static MunitResult test_emplace_destroy(
     return MUNIT_OK;
 }
 
+static MunitResult test_view_get(
+    const MunitParameter params[], void* data
+) {
+    de_ecs *r = de_ecs_make();
+
+    size_t total_num = 1000;
+    size_t idx = 0;
+    size_t triple_num = 300;
+    size_t cell_num = 100;
+    size_t tripe_cell_num = 600;
+    munit_assert(total_num == triple_num + cell_num + tripe_cell_num);
+
+    de_entity *ennts_all = calloc(total_num, sizeof(de_entity));
+
+    HTable *table_cell = htable_new(NULL);
+    HTable *table_triple = htable_new(NULL);
+    HTable *table_triple_cell = htable_new(NULL);
+
+    // Создать случайное количество сущностей.
+    // Часть сущностей с компонентом cp_triple
+    // Часть сущностей с компонентом cp_cell
+    // Часть сущностей с компонентами cp_cell и cp_triple
+    // Проход при помощи de_view_single
+
+    for (int i = 0; i < cell_num; ++i) {
+        de_entity e = ennts_all[idx++] = de_create(r);
+        struct Cell *cell = de_emplace(r, e, cp_cell);
+        // {{{
+        cell->from_x = rand() % 1000;
+        cell->from_y = rand() % 1000;
+        cell->to_x = rand() % 1000;
+        cell->to_y = rand() % 1000;
+        cell->value = rand() % 1000;
+        // }}}
+        htable_add(table_cell, &e, sizeof(e), cell, sizeof(*cell));
+    }
+
+    for (int i = 0; i < tripe_cell_num; ++i) {
+        de_entity e = ennts_all[idx++] = de_create(r);
+
+        struct Triple *triple = de_emplace(r, e, cp_triple);
+        // {{{
+        triple->dx = rand() % 1000;
+        triple->dy = rand() % 1000;
+        triple->dz = rand() % 1000;
+        // }}}
+        struct Cell *cell = de_emplace(r, e, cp_cell);
+        // {{{
+        cell->from_x = rand() % 1000;
+        cell->from_y = rand() % 1000;
+        cell->to_x = rand() % 1000;
+        cell->to_y = rand() % 1000;
+        cell->value = rand() % 1000;
+        // }}}
+        
+        struct {
+            struct Cell     cell;
+            struct Triple   triple;
+        } x;
+        x.cell = *cell;
+        x.triple = *triple;
+
+        htable_add(table_triple_cell, &e, sizeof(e), &x, sizeof(x));
+    }
+
+    for (int i = 0; i < triple_num; ++i) {
+        de_entity e = ennts_all[idx++] = de_create(r);
+
+        struct Triple *triple = de_emplace(r, e, cp_triple);
+        // {{{
+        triple->dx = rand() % 1000;
+        triple->dy = rand() % 1000;
+        triple->dz = rand() % 1000;
+        // }}}
+        htable_add(table_triple, &e, sizeof(e), triple, sizeof(*triple));
+    }
+
+    htable_print(table_triple);
+
+    {
+        de_view v = de_create_view(r, 1, (de_cp_type[]){cp_cell});
+        for (; de_view_valid(&v); de_view_next(&v)) {
+            de_entity e = de_view_entity(&v);
+            const struct Cell *cell1 = de_view_get(&v, cp_cell);
+            size_t sz = sizeof(e);
+            const struct Cell *cell2 = htable_get(table_cell, &e, sz, NULL);
+            printf("cell2 %p\n", cell2);
+            munit_assert_not_null(cell1);
+            munit_assert_not_null(cell2);
+            munit_assert(!memcmp(cell1, cell2, sizeof(*cell1)));
+            // */
+        }
+    }
+    // */
+
+    {
+        de_view v = de_create_view(r, 1, (de_cp_type[]){cp_triple});
+        for (;de_view_valid(&v); de_view_next(&v)) {
+            de_entity e = de_view_entity(&v);
+            const struct Triple *tr1 = de_view_get(&v, cp_triple);
+            size_t sz = sizeof(e);
+            const struct Triple *tr2 = htable_get(table_triple, &e, sz, NULL);
+            munit_assert_not_null(tr1);
+            munit_assert_not_null(tr2);
+            munit_assert(!memcmp(tr1, tr2, sizeof(*tr1)));
+        }
+    }
+
+    // Часть сущностей с компонентами cp_cell и cp_triple
+    {
+        de_view v = de_create_view(r, 2, (de_cp_type[]){cp_triple, cp_cell});
+        for (;de_view_valid(&v); de_view_next(&v)) {
+            de_entity e = de_view_entity(&v);
+            const struct Triple *tr = de_view_get(&v, cp_triple);
+            const struct Triple *cell = de_view_get(&v, cp_cell);
+            size_t sz = sizeof(e);
+
+            const struct {
+                struct Cell     cell;
+                struct Triple   triple;
+            } *x = htable_get(table_triple, &e, sz, NULL);
+
+            munit_assert_not_null(tr);
+            munit_assert_not_null(cell);
+            munit_assert(!memcmp(tr, &x->triple, sizeof(*tr)));
+            munit_assert(!memcmp(cell, &x->cell, sizeof(*cell)));
+        }
+    }
+    htable_free(table_cell);
+    htable_free(table_triple);
+    htable_free(table_triple_cell);
+    free(ennts_all);
+    //free(ennts_triple);
+    //free(ennts_cell);
+    //free(ennts_triple_cell);
+    de_ecs_destroy(r);
+    return MUNIT_OK;
+}
+
+static MunitResult test_view_single_get(
+    const MunitParameter params[], void* data
+) {
+    de_ecs *r = de_ecs_make();
+
+    size_t total_num = 1000;
+    size_t idx = 0;
+    size_t triple_num = 300;
+    size_t cell_num = 100;
+    size_t tripe_cell_num = 600;
+    munit_assert(total_num == triple_num + cell_num + tripe_cell_num);
+
+    de_entity *ennts_all = calloc(total_num, sizeof(de_entity));
+    //de_entity *ennts_triple = calloc(triple_num, sizeof(de_entity));
+    //de_entity *ennts_cell = calloc(cell_num, sizeof(de_entity));
+    //de_entity *ennts_triple_cell = calloc(tripe_cell_num, sizeof(de_entity));
+
+    HTable *table_cell = htable_new(NULL);
+    HTable *table_triple = htable_new(NULL);
+
+    // Проход при помощи de_view_single
+
+    // Часть сущностей с компонентом cp_cell
+    for (int i = 0; i < cell_num; ++i) {
+        de_entity e = ennts_all[idx++] = de_create(r);
+        struct Cell *cell = de_emplace(r, e, cp_cell);
+        // {{{
+        cell->from_x = rand() % 1000;
+        cell->from_y = rand() % 1000;
+        cell->to_x = rand() % 1000;
+        cell->to_y = rand() % 1000;
+        cell->value = rand() % 1000;
+        // }}}
+        htable_add(table_cell, &e, sizeof(e), cell, sizeof(*cell));
+    }
+
+    for (int i = 0; i < tripe_cell_num; ++i) {
+        de_entity e = ennts_all[idx++] = de_create(r);
+
+        struct Triple *triple = de_emplace(r, e, cp_triple);
+        // {{{
+        triple->dx = rand() % 1000;
+        triple->dy = rand() % 1000;
+        triple->dz = rand() % 1000;
+        // }}}
+        struct Cell *cell = de_emplace(r, e, cp_cell);
+        // {{{
+        cell->from_x = rand() % 1000;
+        cell->from_y = rand() % 1000;
+        cell->to_x = rand() % 1000;
+        cell->to_y = rand() % 1000;
+        cell->value = rand() % 1000;
+        // }}}
+    }
+
+    // Часть сущностей с компонентом cp_triple
+    for (int i = 0; i < triple_num; ++i) {
+        de_entity e = ennts_all[idx++] = de_create(r);
+
+        struct Triple *triple = de_emplace(r, e, cp_triple);
+        // {{{
+        triple->dx = rand() % 1000;
+        triple->dy = rand() % 1000;
+        triple->dz = rand() % 1000;
+        // }}}
+        htable_add(table_triple, &e, sizeof(e), triple, sizeof(*triple));
+    }
+
+    htable_print(table_triple);
+
+    {
+        de_view_single v = de_create_view_single(r, cp_cell);
+        for (;de_view_single_valid(&v); de_view_single_next(&v)) {
+            de_entity e = de_view_single_entity(&v);
+            const struct Cell *cell1 = de_view_single_get(&v);
+            size_t sz = sizeof(e);
+            const struct Cell *cell2 = htable_get(table_cell, &e, sz, NULL);
+            printf("cell2 %p\n", cell2);
+            //munit_assert_not_null(cell1);
+            munit_assert_not_null(cell2);
+            if (cell2)
+                munit_assert(!memcmp(cell1, cell2, sizeof(*cell1)));
+            //munit_assert(!memcmp(cell1, cell2, sizeof(*cell1)));
+            // */
+        }
+    }
+    // */
+
+    {
+        de_view_single v = de_create_view_single(r, cp_triple);
+        for (;de_view_single_valid(&v); de_view_single_next(&v)) {
+            de_entity e = de_view_single_entity(&v);
+            const struct Triple *tr1 = de_view_single_get(&v);
+            size_t sz = sizeof(e);
+            const struct Triple *tr2 = htable_get(table_triple, &e, sz, NULL);
+            //munit_assert_not_null(tr1);
+            //munit_assert_not_null(tr2);
+            if (tr2)
+                munit_assert(!memcmp(tr1, tr2, sizeof(*tr1)));
+        }
+    }
+
+    htable_free(table_cell);
+    htable_free(table_triple);
+    free(ennts_all);
+    //free(ennts_triple);
+    //free(ennts_cell);
+    //free(ennts_triple_cell);
+    de_ecs_destroy(r);
+    return MUNIT_OK;
+}
+
 static MunitTest test_suite_tests[] = {
+
+    {
+      (char*) "/view_get",
+      test_view_get,
+      NULL,
+      NULL,
+      MUNIT_TEST_OPTION_NONE,
+      NULL
+    },
+
+
+  {
+    (char*) "/view_single_get",
+    test_view_single_get,
+    NULL,
+    NULL,
+    MUNIT_TEST_OPTION_NONE,
+    NULL
+  },
+
   {
     (char*) "/try_get_none_existing_component",
     test_try_get_none_existing_component,
@@ -998,6 +1271,8 @@ static MunitTest test_suite_tests[] = {
     MUNIT_TEST_OPTION_NONE,
     NULL
   },
+
+  /*
   {
     (char*) "/destroy",
     test_destroy,
@@ -1006,6 +1281,8 @@ static MunitTest test_suite_tests[] = {
     MUNIT_TEST_OPTION_NONE,
     NULL
   },
+  */
+
   {
     (char*) "/emplace_destroy",
     test_emplace_destroy,
