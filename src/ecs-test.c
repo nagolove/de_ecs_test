@@ -967,6 +967,75 @@ static MunitResult test_emplace_destroy(
     return MUNIT_OK;
 }
 
+static MunitResult test_has(
+    const MunitParameter params[], void* data
+) {
+
+    {
+        de_ecs *r = de_ecs_make();
+        de_entity e = de_create(r);
+        de_emplace(r, e, cp_triple);
+        //memset(tr, 1, sizeof(*tr));
+        munit_assert(de_has(r, e, cp_triple) == true);
+        munit_assert(de_has(r, e, cp_cell) == false);
+        de_ecs_destroy(r);
+    }
+
+    {
+        de_ecs *r = de_ecs_make();
+        de_entity e = de_create(r);
+        de_emplace(r, e, cp_triple);
+        de_emplace(r, e, cp_cell);
+        //memset(tr, 1, sizeof(*tr));
+        munit_assert(de_has(r, e, cp_triple) == true);
+        munit_assert(de_has(r, e, cp_cell) == true);
+        de_ecs_destroy(r);
+    }
+
+    {
+        de_ecs *r = de_ecs_make();
+        de_entity e = de_create(r);
+        de_emplace(r, e, cp_triple);
+        de_emplace(r, e, cp_cell);
+        //memset(tr, 1, sizeof(*tr));
+        munit_assert(de_has(r, e, cp_triple) == true);
+        munit_assert(de_has(r, e, cp_cell) == true);
+        de_ecs_destroy(r);
+    }
+
+    // XXX: Что если к одной сущности несколько раз цеплять компонент одного и
+    // того же типа?
+    {
+        de_ecs *r = de_ecs_make();
+        const int num = 100;
+        de_entity ennts[num];
+        for (int i = 0; i < num; i++) {
+            de_entity e = de_create(r);
+            de_emplace(r, e, cp_triple);
+            ennts[i] = e;
+        }
+
+        for (int i = 0; i < num; i++) {
+            de_entity e = ennts[i];
+            munit_assert(de_has(r, e, cp_triple) == true);
+            munit_assert(de_has(r, e, cp_cell) == false);
+        }
+
+        de_view_single v = de_create_view_single(r, cp_triple);
+        for(; de_view_single_valid(&v); de_view_single_next(&v)) {
+            de_entity e = de_view_single_entity(&v);
+            munit_assert(de_has(r, e, cp_triple) == true);
+            munit_assert(de_has(r, e, cp_cell) == false);
+        }
+
+        de_ecs_destroy(r);
+    }
+
+
+
+    return MUNIT_OK;
+}
+
 static MunitResult test_view_get(
     const MunitParameter params[], void* data
 ) {
@@ -1044,7 +1113,8 @@ static MunitResult test_view_get(
         htable_add(table_triple, &e, sizeof(e), triple, sizeof(*triple));
     }
 
-    htable_print(table_triple);
+    if (verbose_print)
+        htable_print(table_triple);
 
     {
         de_view v = de_create_view(r, 1, (de_cp_type[]){cp_cell});
@@ -1219,6 +1289,15 @@ static MunitResult test_view_single_get(
 }
 
 static MunitTest test_suite_tests[] = {
+
+    {
+      (char*) "/has",
+      test_has,
+      NULL,
+      NULL,
+      MUNIT_TEST_OPTION_NONE,
+      NULL
+    },
 
     {
       (char*) "/view_get",
