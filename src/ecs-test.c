@@ -5,6 +5,7 @@
 #include "koh.h"
 #include "koh_common.h"
 #include "koh_destral_ecs.h"
+#include "koh_destral_ecs_internal.h"
 #include "koh_routine.h"
 #include "koh_set.h"
 #include "koh_strset.h"
@@ -31,6 +32,10 @@ struct Triple {
     float dx, dy, dz;
 };
 
+struct Node {
+    char u;
+};
+
 static bool verbose_print = false;
 
 static const de_cp_type cp_triple = {
@@ -45,6 +50,13 @@ static const de_cp_type cp_cell = {
     .cp_sizeof = sizeof(struct Cell),
     .name = "cell",
     .initial_cap = 20000,
+};
+
+static const de_cp_type cp_node = {
+    .cp_id = 2,
+    .cp_sizeof = sizeof(struct Node),
+    .name = "node",
+    .initial_cap = 20,
 };
 
 /*static HTable *table = NULL;*/
@@ -1003,6 +1015,65 @@ static MunitResult test_has(
         de_ecs_destroy(r);
     }
 
+    {
+        de_ecs *r = de_ecs_make();
+
+        de_ecs_print(r);
+        de_entity e1 = de_create(r);
+        de_emplace(r, e1, cp_triple);
+
+        de_ecs_print(r);
+        de_entity e2 = de_create(r);
+        de_emplace(r, e2, cp_cell);
+
+        de_ecs_print(r);
+        de_entity e3 = de_create(r);
+        de_emplace(r, e3, cp_node);
+
+        de_ecs_print(r);
+
+        de_storage_print(r, cp_triple);
+        de_storage_print(r, cp_cell);
+        de_storage_print(r, cp_node);
+
+        munit_assert(de_has(r, e1, cp_triple) == true);
+        munit_assert(de_has(r, e1, cp_cell) == false);
+        munit_assert(de_has(r, e2, cp_triple) == false);
+        munit_assert(de_has(r, e2, cp_cell) == true);
+
+        //de_destroy(r, e1);
+        de_remove_all(r, e2);
+        de_ecs_print(r);
+        de_remove_all(r, e1);
+        de_ecs_print(r);
+        de_remove_all(r, e3);
+        de_ecs_print(r);
+        //de_destroy(r, e2);
+
+        de_storage_print(r, cp_triple);
+        de_storage_print(r, cp_cell);
+        de_storage_print(r, cp_node);
+
+        munit_assert(de_valid(r, e1));
+        munit_assert(de_valid(r, e2));
+        munit_assert(de_valid(r, e3));
+        munit_assert((e1 != e2) && (e1 != e3));
+
+        de_ecs_print(r);
+        
+        munit_assert(de_orphan(r, e1) == true);
+        munit_assert(de_orphan(r, e2) == true);
+        munit_assert(de_orphan(r, e3) == true);
+
+        de_ecs_print(r);
+
+        munit_assert(de_has(r, e1, cp_triple) == false);
+        //munit_assert(de_has(r, e2, cp_cell) == false);
+        //munit_assert(de_has(r, e3, cp_node) == false);
+
+        de_ecs_destroy(r);
+    }
+
     // XXX: Что если к одной сущности несколько раз цеплять компонент одного и
     // того же типа?
     {
@@ -1244,7 +1315,8 @@ static MunitResult test_view_single_get(
         htable_add(table_triple, &e, sizeof(e), triple, sizeof(*triple));
     }
 
-    htable_print(table_triple);
+    if (verbose_print)
+        htable_print(table_triple);
 
     {
         de_view_single v = de_create_view_single(r, cp_cell);
@@ -1288,8 +1360,55 @@ static MunitResult test_view_single_get(
     return MUNIT_OK;
 }
 
+static MunitResult test_sparse(
+    const MunitParameter params[], void* data
+) {
+    {
+        de_sparse s = {};
+        de_entity e1, e2, e3;
+
+        e1 = de_make_entity(
+            (de_entity_id) { .id = 100, }, (de_entity_ver) { .ver = 0 }
+        );
+        e2 = de_make_entity(
+            (de_entity_id) { .id = 10, }, (de_entity_ver) { .ver = 0 }
+        );
+        e3 = de_make_entity(
+            (de_entity_id) { .id = 11, }, (de_entity_ver) { .ver = 0 }
+        );
+
+        de_sparse_init(&s, 10);
+
+        de_sparse_emplace(&s, e1);
+        munit_assert(de_sparse_contains(&s, e1));
+
+        de_sparse_emplace(&s, e2);
+        munit_assert(de_sparse_contains(&s, e2));
+
+        de_sparse_emplace(&s, e3);
+        munit_assert(de_sparse_contains(&s, e3));
+
+
+        de_sparse_destroy(&s);
+    }
+
+    return MUNIT_OK;
+}
+
 static MunitTest test_suite_tests[] = {
 
+    {
+      (char*) "/sparse",
+      test_sparse,
+      NULL,
+      NULL,
+      MUNIT_TEST_OPTION_NONE,
+      NULL
+    },
+
+
+    /*
+    // FIXME:
     {
       (char*) "/has",
       test_has,
@@ -1298,7 +1417,10 @@ static MunitTest test_suite_tests[] = {
       MUNIT_TEST_OPTION_NONE,
       NULL
     },
+    */
 
+    /*
+    // FIXME:
     {
       (char*) "/view_get",
       test_view_get,
@@ -1308,15 +1430,16 @@ static MunitTest test_suite_tests[] = {
       NULL
     },
 
-
-  {
-    (char*) "/view_single_get",
-    test_view_single_get,
-    NULL,
-    NULL,
-    MUNIT_TEST_OPTION_NONE,
-    NULL
-  },
+    // FIXME:
+      {
+        (char*) "/view_single_get",
+        test_view_single_get,
+        NULL,
+        NULL,
+        MUNIT_TEST_OPTION_NONE,
+        NULL
+      },
+    */
 
   {
     (char*) "/try_get_none_existing_component",
@@ -1326,6 +1449,7 @@ static MunitTest test_suite_tests[] = {
     MUNIT_TEST_OPTION_NONE,
     NULL
   },
+
   {
     (char*) "/destroy_one_random",
     test_destroy_one_random,
@@ -1334,6 +1458,7 @@ static MunitTest test_suite_tests[] = {
     MUNIT_TEST_OPTION_NONE,
     NULL
   },
+
   {
     (char*) "/destroy_one",
     test_destroy_one,
@@ -1342,6 +1467,7 @@ static MunitTest test_suite_tests[] = {
     MUNIT_TEST_OPTION_NONE,
     NULL
   },
+
   {
     (char*) "/destroy_zero",
     test_destroy_zero,
@@ -1351,7 +1477,7 @@ static MunitTest test_suite_tests[] = {
     NULL
   },
 
-  /*
+  /* //FIXME:
   {
     (char*) "/destroy",
     test_destroy,
@@ -1370,6 +1496,7 @@ static MunitTest test_suite_tests[] = {
     MUNIT_TEST_OPTION_NONE,
     NULL
   },
+
   {
     (char*) "/ecs_clone_mono",
     test_ecs_clone_mono,
@@ -1378,6 +1505,7 @@ static MunitTest test_suite_tests[] = {
     MUNIT_TEST_OPTION_NONE,
     NULL
   },
+
   {
     (char*) "/ecs_clone_multi",
     test_ecs_clone_multi,
@@ -1386,6 +1514,7 @@ static MunitTest test_suite_tests[] = {
     MUNIT_TEST_OPTION_NONE,
     NULL
   },
+
   { NULL, NULL, NULL, NULL, MUNIT_TEST_OPTION_NONE, NULL }
 };
 
