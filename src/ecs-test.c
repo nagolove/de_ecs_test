@@ -650,6 +650,7 @@ struct TestDestroyOneRandomCtx {
     de_cp_type  comp_type;
 };
 
+// Все сущности имеют один компонент
 static bool iter_ecs_check_entt(de_ecs *r, de_entity e, void *udata) {
     struct TestDestroyOneRandomCtx *ctx = udata;
     for (int i = 0; i < ctx->entts_len; i++) {
@@ -661,6 +662,7 @@ static bool iter_ecs_check_entt(de_ecs *r, de_entity e, void *udata) {
     return false;
 }
 
+// Сложный тест, непонятно, что он делает
 static MunitResult test_destroy_one_random(
     const MunitParameter params[], void* data
 ) {
@@ -691,6 +693,8 @@ static MunitResult test_destroy_one_random(
     int comp_value_index = 0;
     for (int j = 0; j < cycles; j++) {
 
+        // Добавляет в массив случайное количество сущносте с прикрепленной
+        // компонентой
         int new_num = random() % 10;
         for (int i = 0; i < new_num; i++) {
 
@@ -713,26 +717,29 @@ static MunitResult test_destroy_one_random(
 
         }
 
+        // Удаление случайно количество сущностей
         int destroy_num = random() % 5;
         for (int i = 0; i < destroy_num; ++i) {
-
             for (int k = 0; k < entts_len; ++k) {
                 if (entts[k] != de_null) {
                     de_destroy(r, entts[k]);
                     entts[k] = de_null;
                 }
             }
-
         }
+
     }
 
+    // Все сущности имеют один компонент, проверка
     de_each(r, iter_ecs_check_entt, &ctx);
 
+    // Удаление всех сущностей
     for (int k = 0; k < entts_len; ++k) {
         if (entts[k] != de_null)
             de_destroy(r, entts[k]);
     }
 
+    // Проверка - сущностей не должно остаться
     int counter = 0;
     de_each(r, iter_ecs_counter, &counter);
     if (counter) {
@@ -1360,37 +1367,75 @@ static MunitResult test_view_single_get(
     return MUNIT_OK;
 }
 
-static MunitResult test_sparse(
+static MunitResult test_sparse_1(
     const MunitParameter params[], void* data
 ) {
-    {
-        de_sparse s = {};
-        de_entity e1, e2, e3;
+    // проверка на добавление содержимого
+    de_sparse s = {};
+    de_entity e1, e2, e3;
 
-        e1 = de_make_entity(
-            (de_entity_id) { .id = 100, }, (de_entity_ver) { .ver = 0 }
-        );
-        e2 = de_make_entity(
-            (de_entity_id) { .id = 10, }, (de_entity_ver) { .ver = 0 }
-        );
-        e3 = de_make_entity(
-            (de_entity_id) { .id = 11, }, (de_entity_ver) { .ver = 0 }
-        );
+    e1 = de_make_entity(
+        (de_entity_id) { .id = 100, }, (de_entity_ver) { .ver = 0 }
+    );
+    e2 = de_make_entity(
+        (de_entity_id) { .id = 10, }, (de_entity_ver) { .ver = 0 }
+    );
+    e3 = de_make_entity(
+        (de_entity_id) { .id = 11, }, (de_entity_ver) { .ver = 0 }
+    );
 
-        de_sparse_init(&s, 10);
+    de_sparse_init(&s, 10);
 
+    de_sparse_emplace(&s, e1);
+    munit_assert(de_sparse_contains(&s, e1));
+
+    de_sparse_emplace(&s, e2);
+    munit_assert(de_sparse_contains(&s, e2));
+
+    de_sparse_emplace(&s, e3);
+    munit_assert(de_sparse_contains(&s, e3));
+
+    de_sparse_destroy(&s);
+
+    return MUNIT_OK;
+}
+
+static MunitResult test_sparse_2(
+    const MunitParameter params[], void* data
+) {
+    // проверка на добавление и удаление содержимого
+    de_sparse s = {};
+    de_entity e1, e2, e3;
+
+    e1 = de_make_entity(
+        (de_entity_id) { .id = 0, }, (de_entity_ver) { .ver = 0 }
+    );
+    e2 = de_make_entity(
+        (de_entity_id) { .id = 1, }, (de_entity_ver) { .ver = 0 }
+    );
+    e3 = de_make_entity(
+        (de_entity_id) { .id = 2, }, (de_entity_ver) { .ver = 0 }
+    );
+
+    de_sparse_init(&s, 10);
+
+    // Проверка, можно-ли добавлять и удалять циклически
+    //for (int i = 0; i < 10; i++) {
         de_sparse_emplace(&s, e1);
-        munit_assert(de_sparse_contains(&s, e1));
-
         de_sparse_emplace(&s, e2);
-        munit_assert(de_sparse_contains(&s, e2));
-
         de_sparse_emplace(&s, e3);
-        munit_assert(de_sparse_contains(&s, e3));
 
+        de_sparse_remove(&s, e1);
+        munit_assert(!de_sparse_contains(&s, e1));
 
-        de_sparse_destroy(&s);
-    }
+        de_sparse_remove(&s, e2);
+        munit_assert(!de_sparse_contains(&s, e2));
+
+        de_sparse_remove(&s, e3);
+        munit_assert(!de_sparse_contains(&s, e3));
+    //}
+
+    de_sparse_destroy(&s);
 
     return MUNIT_OK;
 }
@@ -1398,8 +1443,17 @@ static MunitResult test_sparse(
 static MunitTest test_suite_tests[] = {
 
     {
-      (char*) "/sparse",
-      test_sparse,
+      (char*) "/sparse_1",
+      test_sparse_1,
+      NULL,
+      NULL,
+      MUNIT_TEST_OPTION_NONE,
+      NULL
+    },
+
+    {
+      (char*) "/sparse_2",
+      test_sparse_2,
       NULL,
       NULL,
       MUNIT_TEST_OPTION_NONE,
