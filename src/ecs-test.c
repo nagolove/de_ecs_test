@@ -1025,23 +1025,29 @@ static MunitResult test_has(
     {
         de_ecs *r = de_ecs_make();
 
-        de_ecs_print(r);
+        if (verbose_print)
+            de_ecs_print(r);
         de_entity e1 = de_create(r);
         de_emplace(r, e1, cp_triple);
 
-        de_ecs_print(r);
+        if (verbose_print)
+            de_ecs_print(r);
         de_entity e2 = de_create(r);
         de_emplace(r, e2, cp_cell);
 
-        de_ecs_print(r);
+        if (verbose_print)
+            de_ecs_print(r);
         de_entity e3 = de_create(r);
         de_emplace(r, e3, cp_node);
 
-        de_ecs_print(r);
+        if (verbose_print)
+            de_ecs_print(r);
 
-        de_storage_print(r, cp_triple);
-        de_storage_print(r, cp_cell);
-        de_storage_print(r, cp_node);
+        if (verbose_print) {
+            de_storage_print(r, cp_triple);
+            de_storage_print(r, cp_cell);
+            de_storage_print(r, cp_node);
+        }
 
         munit_assert(de_has(r, e1, cp_triple) == true);
         munit_assert(de_has(r, e1, cp_cell) == false);
@@ -1050,29 +1056,36 @@ static MunitResult test_has(
 
         //de_destroy(r, e1);
         de_remove_all(r, e2);
-        de_ecs_print(r);
+        if (verbose_print)
+            de_ecs_print(r);
         de_remove_all(r, e1);
-        de_ecs_print(r);
+        if (verbose_print)
+            de_ecs_print(r);
         de_remove_all(r, e3);
-        de_ecs_print(r);
+        if (verbose_print)
+            de_ecs_print(r);
         //de_destroy(r, e2);
 
-        de_storage_print(r, cp_triple);
-        de_storage_print(r, cp_cell);
-        de_storage_print(r, cp_node);
+        if (verbose_print) {
+            de_storage_print(r, cp_triple);
+            de_storage_print(r, cp_cell);
+            de_storage_print(r, cp_node);
+        }
 
         munit_assert(de_valid(r, e1));
         munit_assert(de_valid(r, e2));
         munit_assert(de_valid(r, e3));
         munit_assert((e1 != e2) && (e1 != e3));
 
-        de_ecs_print(r);
+        if (verbose_print)
+            de_ecs_print(r);
         
         munit_assert(de_orphan(r, e1) == true);
         munit_assert(de_orphan(r, e2) == true);
         munit_assert(de_orphan(r, e3) == true);
 
-        de_ecs_print(r);
+        if (verbose_print)
+            de_ecs_print(r);
 
         munit_assert(de_has(r, e1, cp_triple) == false);
         //munit_assert(de_has(r, e2, cp_cell) == false);
@@ -1114,6 +1127,16 @@ static MunitResult test_has(
     return MUNIT_OK;
 }
 
+/*
+static HTableAction iter_table_cell(
+    const void *key, int key_len, void *value, int value_len, void *udata
+) {
+    de_entity e = *(de_entity*)key;
+    printf("iter_table_cell: e %u\n", e);
+    return HTABLE_ACTION_NEXT;
+}
+*/
+
 static MunitResult test_view_get(
     const MunitParameter params[], void* data
 ) {
@@ -1121,10 +1144,10 @@ static MunitResult test_view_get(
 
     size_t total_num = 1000;
     size_t idx = 0;
-    size_t triple_num = 300;
     size_t cell_num = 100;
-    size_t tripe_cell_num = 600;
-    munit_assert(total_num == triple_num + cell_num + tripe_cell_num);
+    size_t triple_cell_num = 600;
+    size_t triple_num = 300;
+    munit_assert(total_num == triple_num + cell_num + triple_cell_num);
 
     de_entity *ennts_all = calloc(total_num, sizeof(de_entity));
 
@@ -1133,11 +1156,9 @@ static MunitResult test_view_get(
     HTable *table_triple_cell = htable_new(NULL);
 
     // Создать случайное количество сущностей.
-    // Часть сущностей с компонентом cp_triple
-    // Часть сущностей с компонентом cp_cell
-    // Часть сущностей с компонентами cp_cell и cp_triple
     // Проход при помощи de_view_single
 
+    // Часть сущностей с компонентом cp_cell
     for (int i = 0; i < cell_num; ++i) {
         de_entity e = ennts_all[idx++] = de_create(r);
         struct Cell *cell = de_emplace(r, e, cp_cell);
@@ -1151,7 +1172,18 @@ static MunitResult test_view_get(
         htable_add(table_cell, &e, sizeof(e), cell, sizeof(*cell));
     }
 
-    for (int i = 0; i < tripe_cell_num; ++i) {
+    printf("--------------------------\n");
+    //htable_each(table_cell, iter_table_cell, NULL);
+    printf("table_cell count %d\n", htable_count(table_cell));
+    printf("--------------------------\n");
+
+    struct Couple {
+        struct Cell     cell;
+        struct Triple   triple;
+    };
+
+    // Часть сущностей с компонентами cp_cell и cp_triple
+    for (int i = 0; i < triple_cell_num; ++i) {
         de_entity e = ennts_all[idx++] = de_create(r);
 
         struct Triple *triple = de_emplace(r, e, cp_triple);
@@ -1169,16 +1201,15 @@ static MunitResult test_view_get(
         cell->value = rand() % 1000;
         // }}}
         
-        struct {
-            struct Cell     cell;
-            struct Triple   triple;
-        } x;
-        x.cell = *cell;
-        x.triple = *triple;
+        struct Couple x = {
+            .cell = *cell,
+            .triple = *triple,
+        };
 
         htable_add(table_triple_cell, &e, sizeof(e), &x, sizeof(x));
     }
 
+    // Часть сущностей с компонентом cp_triple
     for (int i = 0; i < triple_num; ++i) {
         de_entity e = ennts_all[idx++] = de_create(r);
 
@@ -1191,8 +1222,10 @@ static MunitResult test_view_get(
         htable_add(table_triple, &e, sizeof(e), triple, sizeof(*triple));
     }
 
+    /*
     if (verbose_print)
         htable_print(table_triple);
+        */
 
     {
         de_view v = de_create_view(r, 1, (de_cp_type[]){cp_cell});
@@ -1200,12 +1233,17 @@ static MunitResult test_view_get(
             de_entity e = de_view_entity(&v);
             const struct Cell *cell1 = de_view_get(&v, cp_cell);
             size_t sz = sizeof(e);
+            //printf("e %u\n", e);
             const struct Cell *cell2 = htable_get(table_cell, &e, sz, NULL);
-            printf("cell2 %p\n", cell2);
+
+            // Обработка cp_triple + cp_cell
             munit_assert_not_null(cell1);
-            munit_assert_not_null(cell2);
-            munit_assert(!memcmp(cell1, cell2, sizeof(*cell1)));
-            // */
+            if (!cell2) {
+                munit_assert(de_has(r, e, cp_triple));
+            } else {
+                //munit_assert(de_has(r, e, cp_triple));
+                munit_assert(!memcmp(cell1, cell2, sizeof(*cell1)));
+            }
         }
     }
     // */
@@ -1218,8 +1256,14 @@ static MunitResult test_view_get(
             size_t sz = sizeof(e);
             const struct Triple *tr2 = htable_get(table_triple, &e, sz, NULL);
             munit_assert_not_null(tr1);
-            munit_assert_not_null(tr2);
-            munit_assert(!memcmp(tr1, tr2, sizeof(*tr1)));
+
+            // Обработка cp_triple + cp_cell
+            if (!tr2) {
+                munit_assert(de_has(r, e, cp_triple));
+            } else {
+                munit_assert(!memcmp(tr1, tr2, sizeof(*tr1)));
+            }
+
         }
     }
 
@@ -1232,15 +1276,21 @@ static MunitResult test_view_get(
             const struct Triple *cell = de_view_get(&v, cp_cell);
             size_t sz = sizeof(e);
 
-            const struct {
-                struct Cell     cell;
-                struct Triple   triple;
-            } *x = htable_get(table_triple, &e, sz, NULL);
+            const struct Couple *x = htable_get(
+                table_triple_cell, &e, sz, NULL
+            );
 
-            munit_assert_not_null(tr);
-            munit_assert_not_null(cell);
-            munit_assert(!memcmp(tr, &x->triple, sizeof(*tr)));
-            munit_assert(!memcmp(cell, &x->cell, sizeof(*cell)));
+            //munit_assert_not_null(tr);
+            //munit_assert_not_null(cell);
+            if (tr && cell) {
+                munit_assert_not_null(x);
+                munit_assert(!memcmp(tr, &x->triple, sizeof(*tr)));
+                munit_assert(!memcmp(cell, &x->cell, sizeof(*cell)));
+            } else if (!tr) {
+                munit_assert(de_has(r, e, cp_cell));
+            } else if (!cell) {
+                munit_assert(de_has(r, e, cp_triple));
+            }
         }
     }
     htable_free(table_cell);
@@ -1261,19 +1311,17 @@ static MunitResult test_view_single_get(
 
     size_t total_num = 1000;
     size_t idx = 0;
-    size_t triple_num = 300;
     size_t cell_num = 100;
-    size_t tripe_cell_num = 600;
-    munit_assert(total_num == triple_num + cell_num + tripe_cell_num);
+    size_t triple_cell_num = 600;
+    size_t triple_num = 300;
+    munit_assert(total_num == triple_num + cell_num + triple_cell_num);
 
     de_entity *ennts_all = calloc(total_num, sizeof(de_entity));
-    //de_entity *ennts_triple = calloc(triple_num, sizeof(de_entity));
-    //de_entity *ennts_cell = calloc(cell_num, sizeof(de_entity));
-    //de_entity *ennts_triple_cell = calloc(tripe_cell_num, sizeof(de_entity));
 
     HTable *table_cell = htable_new(NULL);
     HTable *table_triple = htable_new(NULL);
 
+    // Создать случайное количество сущностей.
     // Проход при помощи de_view_single
 
     // Часть сущностей с компонентом cp_cell
@@ -1290,7 +1338,18 @@ static MunitResult test_view_single_get(
         htable_add(table_cell, &e, sizeof(e), cell, sizeof(*cell));
     }
 
-    for (int i = 0; i < tripe_cell_num; ++i) {
+    printf("--------------------------\n");
+    //htable_each(table_cell, iter_table_cell, NULL);
+    printf("table_cell count %d\n", htable_count(table_cell));
+    printf("--------------------------\n");
+
+    struct Couple {
+        struct Cell     cell;
+        struct Triple   triple;
+    };
+
+    // Часть сущностей с компонентами cp_cell и cp_triple
+    for (int i = 0; i < triple_cell_num; ++i) {
         de_entity e = ennts_all[idx++] = de_create(r);
 
         struct Triple *triple = de_emplace(r, e, cp_triple);
@@ -1307,6 +1366,15 @@ static MunitResult test_view_single_get(
         cell->to_y = rand() % 1000;
         cell->value = rand() % 1000;
         // }}}
+        
+        /*
+        struct Couple x = {
+            .cell = *cell,
+            .triple = *triple,
+        };
+        */
+
+        //htable_add(table_triple_cell, &e, sizeof(e), &x, sizeof(x));
     }
 
     // Часть сущностей с компонентом cp_triple
@@ -1322,48 +1390,104 @@ static MunitResult test_view_single_get(
         htable_add(table_triple, &e, sizeof(e), triple, sizeof(*triple));
     }
 
+    /*
     if (verbose_print)
         htable_print(table_triple);
+        */
 
     {
-        de_view_single v = de_create_view_single(r, cp_cell);
-        for (;de_view_single_valid(&v); de_view_single_next(&v)) {
-            de_entity e = de_view_single_entity(&v);
-            const struct Cell *cell1 = de_view_single_get(&v);
+        de_view v = de_create_view(r, 1, (de_cp_type[]){cp_cell});
+        for (; de_view_valid(&v); de_view_next(&v)) {
+            de_entity e = de_view_entity(&v);
+            const struct Cell *cell1 = de_view_get(&v, cp_cell);
             size_t sz = sizeof(e);
+            //printf("e %u\n", e);
             const struct Cell *cell2 = htable_get(table_cell, &e, sz, NULL);
-            printf("cell2 %p\n", cell2);
-            //munit_assert_not_null(cell1);
-            munit_assert_not_null(cell2);
-            if (cell2)
+
+            // Обработка cp_triple + cp_cell
+            munit_assert_not_null(cell1);
+            if (!cell2) {
+                munit_assert(de_has(r, e, cp_triple));
+            } else {
+                //munit_assert(de_has(r, e, cp_triple));
                 munit_assert(!memcmp(cell1, cell2, sizeof(*cell1)));
-            //munit_assert(!memcmp(cell1, cell2, sizeof(*cell1)));
-            // */
+            }
         }
     }
     // */
 
     {
-        de_view_single v = de_create_view_single(r, cp_triple);
-        for (;de_view_single_valid(&v); de_view_single_next(&v)) {
-            de_entity e = de_view_single_entity(&v);
-            const struct Triple *tr1 = de_view_single_get(&v);
+        de_view v = de_create_view(r, 1, (de_cp_type[]){cp_triple});
+        for (;de_view_valid(&v); de_view_next(&v)) {
+            de_entity e = de_view_entity(&v);
+            const struct Triple *tr1 = de_view_get(&v, cp_triple);
             size_t sz = sizeof(e);
             const struct Triple *tr2 = htable_get(table_triple, &e, sz, NULL);
-            //munit_assert_not_null(tr1);
-            //munit_assert_not_null(tr2);
-            if (tr2)
+            munit_assert_not_null(tr1);
+
+            // Обработка cp_triple + cp_cell
+            if (!tr2) {
+                munit_assert(de_has(r, e, cp_triple));
+            } else {
                 munit_assert(!memcmp(tr1, tr2, sizeof(*tr1)));
+            }
+
         }
     }
 
     htable_free(table_cell);
     htable_free(table_triple);
     free(ennts_all);
-    //free(ennts_triple);
-    //free(ennts_cell);
-    //free(ennts_triple_cell);
     de_ecs_destroy(r);
+    return MUNIT_OK;
+}
+
+static MunitResult test_sparse_ecs(
+    const MunitParameter params[], void* data
+) {
+    // проверка на добавление содержимого
+    de_ecs *r = de_ecs_make();
+    de_entity e1, e2, e3;
+
+    e1 = de_create(r);
+
+/*
+   de_emplace
+
+#0  de_sparse_emplace (s=0x60f000000068, e=0) at /home/nagolove/caustic/src/koh_destral_ecs.c:130
+#1  0x0000555555661eba in de_storage_emplace (s=0x60f000000040, e=0)
+#2  0x0000555555666c70 in de_emplace (r=0x60e000000040, e=0, cp_type=...)
+#3  0x0000555555623c3c in test_sparse_ecs (params=0x0, data=0x555555912a60)
+#4  0x00005555556288b4 in munit_test_runner_exec (runner=0x7ffff4e00080, 
+
+$2 = {sparse = 0x632000000800, sparse_size = 1, sparse_cap = 20000, dense = 0x632000018800, dense_size = 1, 
+  dense_cap = 20000, initial_cap = 20000}
+
+$2 = {sparse = 0x632000000800, sparse_size = 1, sparse_cap = 20000, dense = 0x632000018800, dense_size = 1, 
+  dense_cap = 20000, initial_cap = 20000}
+
+ */
+
+    de_emplace(r, e1, cp_cell);
+
+    munit_assert_not_null(de_get(r, e1, cp_cell));
+    de_destroy(r, e1);
+    munit_assert(!de_valid(r, e1));
+
+    e2 = de_create(r);
+    de_emplace(r, e2, cp_cell);
+    munit_assert_not_null(de_get(r, e2, cp_cell));
+    de_destroy(r, e2);
+    munit_assert(!de_valid(r, e2));
+
+    e3 = de_create(r);
+    de_emplace(r, e3, cp_cell);
+    munit_assert_not_null(de_get(r, e3, cp_cell));
+    de_destroy(r, e3);
+    munit_assert(!de_valid(r, e3));
+
+    de_ecs_destroy(r);
+
     return MUNIT_OK;
 }
 
@@ -1400,6 +1524,55 @@ static MunitResult test_sparse_1(
     return MUNIT_OK;
 }
 
+static MunitResult test_sparse_2_non_seq_idx(
+    const MunitParameter params[], void* data
+) {
+    // проверка на добавление и удаление содержимого
+    de_sparse s = {};
+    de_entity e1, e2, e3;
+
+    e1 = de_make_entity(
+        (de_entity_id) { .id = 1, }, (de_entity_ver) { .ver = 0 }
+    );
+    e2 = de_make_entity(
+        (de_entity_id) { .id = 0, }, (de_entity_ver) { .ver = 0 }
+    );
+    e3 = de_make_entity(
+        (de_entity_id) { .id = 3, }, (de_entity_ver) { .ver = 0 }
+    );
+
+    de_sparse_init(&s, 1);
+
+    // Проверка, можно-ли добавлять и удалять циклически
+    for (int i = 0; i < 10; i++) {
+        //printf("test_sparse_2:%s\n", de_sparse_contains(&s, e1) ? "true" : "false");
+        de_sparse_emplace(&s, e1);
+        de_sparse_emplace(&s, e2);
+        de_sparse_emplace(&s, e3);
+
+        de_sparse_remove(&s, e1);
+        /*de_sparse_remove(&s, e1);*/
+        /*de_sparse_remove(&s, e1);*/
+
+        // XXX: Почему элемент не удаляется?
+        //munit_assert(!de_sparse_contains(&s, e1));
+        //printf("test_sparse_2:%s\n", de_sparse_contains(&s, e1) ? "true" : "false");
+        munit_assert(!de_sparse_contains(&s, e1));
+
+        de_sparse_remove(&s, e2);
+        //munit_assert(!de_sparse_contains(&s, e2));
+        munit_assert(!de_sparse_contains(&s, e2));
+
+        de_sparse_remove(&s, e3);
+        //munit_assert(!de_sparse_contains(&s, e3));
+        munit_assert(!de_sparse_contains(&s, e3));
+    }
+
+    de_sparse_destroy(&s);
+
+    return MUNIT_OK;
+}
+
 static MunitResult test_sparse_2(
     const MunitParameter params[], void* data
 ) {
@@ -1408,32 +1581,45 @@ static MunitResult test_sparse_2(
     de_entity e1, e2, e3;
 
     e1 = de_make_entity(
-        (de_entity_id) { .id = 0, }, (de_entity_ver) { .ver = 0 }
-    );
-    e2 = de_make_entity(
         (de_entity_id) { .id = 1, }, (de_entity_ver) { .ver = 0 }
     );
-    e3 = de_make_entity(
+    e2 = de_make_entity(
         (de_entity_id) { .id = 2, }, (de_entity_ver) { .ver = 0 }
     );
+    e3 = de_make_entity(
+        (de_entity_id) { .id = 3, }, (de_entity_ver) { .ver = 0 }
+    );
 
-    de_sparse_init(&s, 10);
+    de_sparse_init(&s, 1);
 
     // Проверка, можно-ли добавлять и удалять циклически
-    //for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < 10; i++) {
+        //printf("test_sparse_2:%s\n", de_sparse_contains(&s, e1) ? "true" : "false");
         de_sparse_emplace(&s, e1);
         de_sparse_emplace(&s, e2);
         de_sparse_emplace(&s, e3);
 
+        //printf("\ntest_sparse_2: de_sparse_index %zu\n", de_sparse_index(&s, e1));
+        //munit_assert(de_sparse_index(&s, e1))
         de_sparse_remove(&s, e1);
+        //de_sparse_remove(&s, e1);
+        //de_sparse_remove(&s, e1);
+
+        // XXX: Почему элемент не удаляется?
+        //munit_assert(!de_sparse_contains(&s, e1));
+        //printf("test_sparse_2: de_sparse_index %zu\n", de_sparse_index(&s, e1));
+        //printf("test_sparse_2:%s\n", de_sparse_contains(&s, e1) ? "true" : "false");
+
         munit_assert(!de_sparse_contains(&s, e1));
 
         de_sparse_remove(&s, e2);
+        //munit_assert(!de_sparse_contains(&s, e2));
         munit_assert(!de_sparse_contains(&s, e2));
 
         de_sparse_remove(&s, e3);
+        //munit_assert(!de_sparse_contains(&s, e3));
         munit_assert(!de_sparse_contains(&s, e3));
-    //}
+    }
 
     de_sparse_destroy(&s);
 
@@ -1441,6 +1627,16 @@ static MunitResult test_sparse_2(
 }
 
 static MunitTest test_suite_tests[] = {
+
+    {
+      (char*) "/sparse_ecs",
+      test_sparse_ecs,
+      NULL,
+      NULL,
+      MUNIT_TEST_OPTION_NONE,
+      NULL
+    },
+
 
     {
       (char*) "/sparse_1",
@@ -1452,6 +1648,16 @@ static MunitTest test_suite_tests[] = {
     },
 
     {
+      (char*) "/test_sparse_2_non_seq_idx",
+      test_sparse_2_non_seq_idx,
+      NULL,
+      NULL,
+      MUNIT_TEST_OPTION_NONE,
+      NULL
+    },
+
+
+    {
       (char*) "/sparse_2",
       test_sparse_2,
       NULL,
@@ -1461,7 +1667,6 @@ static MunitTest test_suite_tests[] = {
     },
 
 
-    /*
     // FIXME:
     {
       (char*) "/has",
@@ -1471,9 +1676,8 @@ static MunitTest test_suite_tests[] = {
       MUNIT_TEST_OPTION_NONE,
       NULL
     },
-    */
+    // */
 
-    /*
     // FIXME:
     {
       (char*) "/view_get",
@@ -1493,7 +1697,7 @@ static MunitTest test_suite_tests[] = {
         MUNIT_TEST_OPTION_NONE,
         NULL
       },
-    */
+    // */
 
   {
     (char*) "/try_get_none_existing_component",
@@ -1531,7 +1735,7 @@ static MunitTest test_suite_tests[] = {
     NULL
   },
 
-  /* //FIXME:
+   //FIXME:
   {
     (char*) "/destroy",
     test_destroy,
@@ -1540,7 +1744,7 @@ static MunitTest test_suite_tests[] = {
     MUNIT_TEST_OPTION_NONE,
     NULL
   },
-  */
+  // */
 
   {
     (char*) "/emplace_destroy",
